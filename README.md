@@ -8,7 +8,7 @@
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload        # 或双击 run.bat
 ```
-打开 http://127.0.0.1:8000 ，默认账号 **admin / admin123**，登录后在首页底部修改密码。
+打开 http://127.0.0.1:8000 ，默认账号 **admin / admin123**，登录后点右上角用户名进“我的账户”修改密码。
 
 可选环境变量（见 `.env.example`）：
 - `SECRET_KEY`：会话签名密钥，上线必须改

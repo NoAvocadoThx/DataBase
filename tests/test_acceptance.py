@@ -239,3 +239,26 @@ def test_10_column_sort(client):
     assert rows[0] == "0"
     tags_first = re.findall(r'<td>(?:<a class="tag"[^>]*>([^<]*)</a>)', page(client, "/?sort=tags&dir=asc&meeting=yes"))
     assert tags_first == sorted(tags_first)
+
+
+def test_11_account_and_reset_password(client):
+    login(client, "admin", "admin123")
+    assert "修改我的密码" not in page(client, "/")
+    assert 'href="/account"' in page(client, "/")
+    client.post("/users", data={"username": "lily", "password": "lily1234", "role": "planner"})
+    login(client, "lily", "lily1234")
+    a = page(client, "/account")
+    assert "我的账户" in a and "lily" in a and "策划" in a
+    r = client.post("/password", data={"old": "wrong", "new": "abcdef1", "new2": "abcdef1"})
+    assert "%E5%8E%9F%E5%AF%86%E7%A0%81%E9%94%99%E8%AF%AF" in r.headers["location"]
+    r = client.post("/password", data={"old": "lily1234", "new": "abcdef1", "new2": "abcdef2"})
+    assert "%E4%B8%8D%E4%B8%80%E8%87%B4" in r.headers["location"]  # 不一致
+    r = client.post("/password", data={"old": "lily1234", "new": "abcdef1", "new2": "abcdef1"})
+    assert "%E5%B7%B2%E4%BF%AE%E6%94%B9" in r.headers["location"]
+    login(client, "lily", "abcdef1")
+    assert client.get("/users").status_code == 403  # 策划不能进用户管理
+    # 管理员重置
+    login(client, "admin", "admin123")
+    uid = re.search(r'/users/(\d+)/reset', page(client, "/users").split("lily")[1]).group(1)
+    client.post(f"/users/{uid}/reset", data={"password": "reset123"})
+    login(client, "lily", "reset123")

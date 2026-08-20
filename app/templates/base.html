@@ -20,5 +20,5 @@ button.danger{background:#dc2626}button.ghost,.btn.ghost{background:#e5e7eb;colo
 <a href="/">专家列表</a><a href="/ask">找专家</a>
 {% if sess.role in ['admin','planner'] %}<a href="/documents">资料录入</a>{% if pending_docs %}<a class="badge" href="/documents">{{pending_docs}}</a>{% endif %}<a href="/history">操作历史</a>{% endif %}
 {% if sess.role=='admin' %}<a href="/import">Excel 导入</a><a href="/export">导出</a><a href="/duplicates">疑似重复</a>{% if pending_dup %}<a class="badge" href="/duplicates">{{pending_dup}}</a>{% endif %}<a href="/trash">回收站</a>{% if trash %}<a class="badge" href="/trash">{{trash}}</a>{% endif %}<a href="/users">用户</a>{% endif %}
-<span class="me">{{sess.name}}（{{ {'admin':'管理员','planner':'策划','intern':'实习生'}[sess.role] }}） <a href="/logout">退出</a></span></nav>{% endif %}
+<span class="me"><a href="/account" title="我的账户">{{sess.name}}（{{ {'admin':'管理员','planner':'策划','intern':'实习生'}[sess.role] }}）</a> · <a href="/logout">退出</a></span></nav>{% endif %}
 <main>{% if msg %}<div class="msg">{{msg}}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>

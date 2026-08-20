@@ -84,15 +84,24 @@ def logout():
     return resp
 
 
+@app.get("/account", response_class=HTMLResponse)
+def account(request: Request, s: Session = Depends(db), sess=Depends(ANY), msg: str = ""):
+    return render("account.html", request, user=s.get(User, sess["uid"]), msg=msg)
+
+
 @app.post("/password")
 def change_password(request: Request, s: Session = Depends(db), sess=Depends(ANY),
-                    old: str = Form(...), new: str = Form(...)):
+                    old: str = Form(...), new: str = Form(...), new2: str = Form("")):
     u = s.get(User, sess["uid"])
     if not auth.verify_password(old, u.password_hash):
-        return back("/", "原密码错误")
+        return back("/account", "原密码错误")
+    if new2 and new != new2:
+        return back("/account", "两次输入的新密码不一致")
+    if len(new) < 6:
+        return back("/account", "新密码至少 6 位")
     u.password_hash = auth.hash_password(new)
     s.commit()
-    return back("/", "密码已修改")
+    return back("/account", "密码已修改")
 
 
 # ---------- 专家 ----------
@@ -423,6 +432,18 @@ def user_add(s: Session = Depends(db), sess=Depends(ADMIN), username: str = Form
                role=role if role in ROLES else "intern", display_name=display_name))
     s.commit()
     return back("/users", "已创建")
+
+
+@app.post("/users/{uid}/reset")
+def user_reset(uid: int, s: Session = Depends(db), sess=Depends(ADMIN), password: str = Form(...)):
+    u = s.get(User, uid)
+    if not u:
+        return back("/users", "用户不存在")
+    if len(password) < 6:
+        return back("/users", "密码至少 6 位")
+    u.password_hash = auth.hash_password(password)
+    s.commit()
+    return back("/users", f"已重置 {u.username} 的密码")
 
 
 @app.post("/users/{uid}/delete")

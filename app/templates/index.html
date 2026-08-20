@@ -25,6 +25,4 @@
 <td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td><td>{{e.phone}}</td><td>{{e.meetings|length}} 次</td></tr>
 {% else %}<tr><td colspan="7" class="muted">暂无数据</td></tr>{% endfor %}</table>
 {% include "_pager.html" %}</div>
-<div class="card"><details><summary class="muted">修改我的密码</summary><form method="post" action="/password" style="margin-top:8px">
-<input name="old" type="password" placeholder="原密码" required> <input name="new" type="password" placeholder="新密码" required minlength="6"> <button>修改</button></form></details></div>
 {% endblock %}
