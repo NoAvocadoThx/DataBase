@@ -1,0 +1,16 @@
+services:
+  web:
+    build: .
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_URL: ${LLM_URL:-https://api.deepseek.com/chat/completions}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      DB_PATH: /srv/data/experts.db
+      UPLOAD_DIR: /srv/data/uploads
+      BACKUP_DIR: /srv/data/backups
+    volumes:
+      - ./data:/srv/data

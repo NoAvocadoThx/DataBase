@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.getenv("DB_PATH", os.path.join(ROOT, "experts.db"))
-OUT = os.path.join(ROOT, "backups", datetime.now().strftime("%Y%m%d"))
+OUT = os.path.join(os.getenv("BACKUP_DIR", os.path.join(ROOT, "backups")), datetime.now().strftime("%Y%m%d"))
 KEEP_DAYS = 30
 
 os.makedirs(OUT, exist_ok=True)
@@ -15,7 +15,7 @@ src = sqlite3.connect(DB)
 dst = sqlite3.connect(os.path.join(OUT, "experts.db"))
 src.backup(dst)
 dst.close(); src.close()
-up = os.path.join(ROOT, "uploads")
+up = os.getenv("UPLOAD_DIR", os.path.join(ROOT, "uploads"))
 if os.path.isdir(up):
     shutil.copytree(up, os.path.join(OUT, "uploads"), dirs_exist_ok=True)
 # 清理过期

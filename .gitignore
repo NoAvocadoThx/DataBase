@@ -6,3 +6,4 @@ server.log
 backups/
 uploads/
 .gstack/
+data/
