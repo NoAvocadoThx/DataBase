@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block body %}
+<div class="row" style="justify-content:space-between;margin-bottom:14px">
+<h2 style="margin:0">{{g.name}} <span class="tag {{'warn' if g.is_public else ''}}">{{g.visibility}}</span>
+<span class="muted" style="font-weight:400">{{experts|length}} 位 · 创建者 {{g.owner}}</span></h2>
+<a class="btn ghost" href="/?group={{g.id}}">在列表中筛选并批量操作</a></div>
+{% if g.description %}<p class="muted">{{g.description}}</p>{% endif %}
+<div class="card flush"><table><tr><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>关注</th><th class="num">合作</th><th></th></tr>
+{% for e in experts %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
+<td>{{e.field}}</td><td>{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span>{% endif %}</td>
+<td class="num">{{e.meetings|length}} 次</td>
+<td style="text-align:right">{% if sess.role in ['admin','planner'] %}<form method="post" action="/expert/{{e.id}}/groups">
+<input type="hidden" name="gid" value="{{g.id}}"><input type="hidden" name="action" value="del"><button class="ghost sm">移出</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">这个分组还是空的。去 <a href="/">专家列表</a> 或专家详情页把人加进来。</td></tr>{% endfor %}</table></div>
+{% if sess.role in ['admin','planner'] and (mine or sess.role == 'admin') %}
+<div class="card"><h3>分组设置</h3><form method="post" action="/groups/{{g.id}}/edit" class="row">
+<input name="name" value="{{g.name}}" required style="width:240px">
+<input name="description" value="{{g.description}}" placeholder="说明" style="width:320px">
+<label class="row" style="margin:0;gap:4px"><input type="checkbox" name="is_public" value="1" {% if g.is_public %}checked{% endif %} style="height:auto;width:auto"> 公开给全团队</label>
+<button>保存</button></form>
+<form method="post" action="/groups/{{g.id}}/delete" onsubmit="return confirm('删除分组「{{g.name}}」？组里的专家本身不会被删除。')" style="margin-top:12px">
+<button class="danger">删除分组</button></form></div>{% endif %}
+{% endblock %}

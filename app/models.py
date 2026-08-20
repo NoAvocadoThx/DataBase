@@ -19,6 +19,14 @@ expert_tag = Table("expert_tag", Base.metadata,
 ROLES = ("admin", "planner", "intern")
 SENSITIVE_ROLES = {"admin", "planner"}
 
+# 重点关注分级：让策划快速找到需要重点维护的专家。空值 = 未分级
+FOCUS_LEVELS = {"core": "核心", "key": "重点", "normal": "一般", "avoid": "不合作"}
+FOCUS_ORDER = ["core", "key", "normal", "avoid"]
+
+group_expert = Table("group_expert", Base.metadata,
+                     Column("group_id", ForeignKey("expert_group.id"), primary_key=True),
+                     Column("expert_id", ForeignKey("expert.id"), primary_key=True))
+
 
 class User(Base):
     __tablename__ = "user"
@@ -47,9 +55,16 @@ class Expert(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     deleted_at = Column(DateTime, index=True)              # 软删除（回收站）
     deleted_by = Column(String(64), default="")
+    focus_level = Column(String(16), default="", index=True)   # 重点关注分级
+    focus_note = Column(String(256), default="")               # 为什么关注（内部）
     tags = relationship("Tag", secondary=expert_tag, back_populates="experts")
     meetings = relationship("Participation", back_populates="expert",
                             cascade="all, delete-orphan")
+    groups = relationship("ExpertGroup", secondary=group_expert, back_populates="experts")
+
+    @property
+    def focus_label(self) -> str:
+        return FOCUS_LEVELS.get(self.focus_level, "")
 
     def searchable_text(self) -> str:
         return " ".join(filter(None, [self.name, self.org, self.title, self.field, self.bio]
@@ -73,6 +88,23 @@ class Participation(Base):
     role = Column(String(64), default="")
     topic = Column(String(256), default="")
     expert = relationship("Expert", back_populates="meetings")
+
+
+class ExpertGroup(Base):
+    """自定义分组：策划自己建的专家名单（如"2026 大会候选""ADC 专题库"）。
+    公开组全团队可见可用；私有组只有创建者能看到。"""
+    __tablename__ = "expert_group"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(64), nullable=False)
+    description = Column(String(256), default="")
+    is_public = Column(Integer, default=1, index=True)
+    owner = Column(String(64), default="", index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    experts = relationship("Expert", secondary=group_expert, back_populates="groups")
+
+    @property
+    def visibility(self) -> str:
+        return "公开" if self.is_public else "私有"
 
 
 class Document(Base):
@@ -102,6 +134,14 @@ class DuplicateCandidate(Base):
 def live(query):
     """只取未删除的专家。"""
     return query.filter(Expert.deleted_at.is_(None))
+
+
+def visible_groups(s, sess: dict):
+    """公开组 + 自己的私有组。"""
+    from sqlalchemy import or_
+    return (s.query(ExpertGroup)
+            .filter(or_(ExpertGroup.is_public == 1, ExpertGroup.owner == sess["name"]))
+            .order_by(ExpertGroup.is_public.desc(), ExpertGroup.name))
 
 
 def make_engine(path: str = DB_PATH):

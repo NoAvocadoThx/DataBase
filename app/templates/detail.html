@@ -11,9 +11,34 @@
 <div><b>微信</b><span class="mono">{{e.wechat or '—'}}</span></div>
 <div style="grid-column:span 2"><b>标签</b>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}—{% endfor %}</div>
 </div></div>
-<div class="side">{% if sess.role in ['admin','planner'] and not deleted %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a><br><br>{% endif %}
+<div class="side">{% if e.focus_level %}<div style="margin-bottom:8px"><span class="focus {{e.focus_level}}">{{e.focus_label}}</span></div>{% endif %}
+{% if sess.role in ['admin','planner'] and not deleted %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a><br><br>{% endif %}
 来源 {{e.source or '—'}}<br>更新 {{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else ''}}</div>
 </div>
+
+<div class="card"><div class="grid">
+<div><h3>重点关注</h3>
+{% if sess.role in ['admin','planner'] and not deleted %}
+<form method="post" action="/expert/{{e.id}}/focus" style="display:grid;gap:8px">
+<div class="row">{% for k in focus_order %}<label class="row" style="margin:0;gap:4px;font-size:.92rem;color:var(--text)">
+<input type="radio" name="level" value="{{k}}" {% if e.focus_level == k %}checked{% endif %} style="height:auto;width:auto"> <span class="focus {{k}}">{{focus_levels[k]}}</span></label>{% endfor %}
+<label class="row" style="margin:0;gap:4px;font-size:.92rem;color:var(--text)"><input type="radio" name="level" value="" {% if not e.focus_level %}checked{% endif %} style="height:auto;width:auto"> 未分级</label></div>
+<input name="note" value="{{e.focus_note or ''}}" placeholder="关注说明，如：ADC 领域首选主席人选" class="w">
+<div><button class="ghost">保存关注分级</button></div></form>
+{% else %}<p style="margin:0">{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span> {{e.focus_note or ''}}{% else %}<span class="muted">未分级</span>{% endif %}</p>{% endif %}</div>
+
+<div><h3>所属分组</h3>
+<p style="margin:0 0 8px">{% for g in e.groups %}<a class="tag warn" href="/groups/{{g.id}}">{{g.name}}{% if not g.is_public %} · 私有{% endif %}</a>{% else %}<span class="muted">还没有加入任何分组</span>{% endfor %}</p>
+{% if sess.role in ['admin','planner'] and not deleted %}
+<form method="post" action="/expert/{{e.id}}/groups" class="row">
+<select name="gid" required><option value="">选择分组…</option>
+{% for g in my_groups %}{% if g not in e.groups %}<option value="{{g.id}}">{{g.name}}{% if not g.is_public %}（私有）{% endif %}</option>{% endif %}{% endfor %}</select>
+<button class="ghost">加入</button><a class="muted" href="/groups">管理分组</a></form>
+{% if e.groups %}<form method="post" action="/expert/{{e.id}}/groups" class="row" style="margin-top:8px">
+<input type="hidden" name="action" value="del">
+<select name="gid" required><option value="">移出分组…</option>{% for g in e.groups %}<option value="{{g.id}}">{{g.name}}</option>{% endfor %}</select>
+<button class="ghost">移出</button></form>{% endif %}{% endif %}</div>
+</div></div>
 
 <div class="card"><h3>简介</h3><p style="margin:0 0 10px">{{e.bio or '（暂无）'}}</p>
 {% if can_sensitive and e.note %}<h4>内部备注</h4><p style="margin:0 0 10px">{{e.note}}</p>{% endif %}

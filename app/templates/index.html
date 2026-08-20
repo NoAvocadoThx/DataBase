@@ -8,18 +8,20 @@
 <h4>单位类型</h4>{% for k, label, n in facets.org_types %}{{facet_link('org_type', k, label, n)}}{% endfor %}
 <h4>常用标签</h4>{% for name, n in facets.tags %}{{facet_link('tag', name, name, n)}}{% else %}<span class="muted" style="padding:0 8px">暂无标签</span>{% endfor %}
 <h4>合作频次</h4>{% for k, label, n in facets.coop %}{{facet_link('coop', k, label, n)}}{% endfor %}
+<h4>重点关注</h4>{% for k, label, n in facets.focus %}{{facet_link('focus', k, label, n)}}{% endfor %}
 </aside>
 <section>
 <div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">专家列表</h2>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new">+ 新增专家</a>{% endif %}</div>
 <div class="card"><form>
-<input type="hidden" name="org_type" value="{{f.org_type}}"><input type="hidden" name="coop" value="{{f.coop}}"><input type="hidden" name="dir" value="{{f.dir}}">
+<input type="hidden" name="org_type" value="{{f.org_type}}"><input type="hidden" name="coop" value="{{f.coop}}"><input type="hidden" name="focus" value="{{f.focus}}"><input type="hidden" name="dir" value="{{f.dir}}">
 <div class="search"><input name="q" value="{{f.q}}" placeholder="搜索姓名、单位、职务或研究方向（空格分隔多个词）" autofocus><button>筛选</button></div>
 <div class="sub">
 <input name="org" value="{{f.org}}" placeholder="单位"><input name="title" value="{{f.title}}" placeholder="职务 / 职称" list="titles">
 <datalist id="titles"><option>教授<option>副教授<option>主任医师<option>副主任医师<option>研究员<option>审评员<option>总裁<option>首席科学家</datalist>
 <input name="field" value="{{f.field}}" placeholder="研究方向"><input name="tag" value="{{f.tag}}" placeholder="标签（逗号分隔）" list="taglist">
 <datalist id="taglist">{% for t in tags %}<option value="{{t.name}}">{% endfor %}</datalist>
+<select name="group"><option value="">分组：不限</option>{% for g in groups %}<option value="{{g.id}}" {% if f.group == g.id|string %}selected{% endif %}>{{g.name}}{% if not g.is_public %}（私有）{% endif %}</option>{% endfor %}</select>
 <select name="meeting"><option value="">合作记录：不限</option><option value="yes" {% if f.meeting=='yes' %}selected{% endif %}>有合作</option><option value="no" {% if f.meeting=='no' %}selected{% endif %}>无合作</option></select>
 <select name="sort"><option value="updated" {% if f.sort=='updated' %}selected{% endif %}>排序：最近更新</option><option value="created" {% if f.sort=='created' %}selected{% endif %}>最近新增</option>
 {% for k, v in [('name','姓名'),('org','单位'),('title','职务'),('field','研究方向'),('tags','标签'),('phone','手机'),('meetings','合作次数')] %}<option value="{{k}}" {% if f.sort==k %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
@@ -35,10 +37,11 @@
 {% else %}{% set href = '?' ~ filters|urlencode %}{% set tip = '再点恢复默认排序' %}{% endif %}
 <th class="{{cls}}"><a href="{{href}}" class="{{'on' if active}}" title="{{tip}}">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span class="dim">⇅</span>{% endif %}</a></th>
 {%- endmacro %}
-<div class="card flush"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('phone','手机')}}{{th('meetings','合作','num')}}</tr>
+<div class="card flush"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('focus','关注')}}{{th('phone','手机')}}{{th('meetings','合作','num')}}</tr>
 {% for e in experts %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
-<td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td><td class="mono">{{e.phone}}</td><td class="num">{{e.meetings|length}} 次</td></tr>
-{% else %}<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">暂无数据{% if params %}，试试放宽筛选条件{% elif sess.role=='admin' %}，先 <a href="/import">导入 Excel</a> 或 <a href="/documents">上传资料</a>{% endif %}</td></tr>{% endfor %}</table>
+<td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td>
+<td>{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span>{% endif %}</td><td class="mono">{{e.phone}}</td><td class="num">{{e.meetings|length}} 次</td></tr>
+{% else %}<tr><td colspan="8" class="muted" style="padding:28px;text-align:center">暂无数据{% if params %}，试试放宽筛选条件{% elif sess.role=='admin' %}，先 <a href="/import">导入 Excel</a> 或 <a href="/documents">上传资料</a>{% endif %}</td></tr>{% endfor %}</table>
 <div style="padding:0 14px">{% include "_pager.html" %}</div></div>
 </section></div>
 {% endblock %}

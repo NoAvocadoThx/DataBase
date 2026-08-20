@@ -3,7 +3,7 @@ import json, os, re, shutil
 from datetime import datetime
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from . import auth, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
-from .models import (Document, DuplicateCandidate, Expert, Participation, ROLES, SessionLocal,
-                     Tag, UPLOAD_DIR, User, init_db, live)
+from .models import (Document, DuplicateCandidate, Expert, ExpertGroup, FOCUS_LEVELS, FOCUS_ORDER,
+                     Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR, User, init_db, live,
+                     visible_groups)
 
 init_db()
 with SessionLocal() as _s:
@@ -68,7 +69,8 @@ def back(url: str, msg: str = "") -> RedirectResponse:
 
 def view(e: Expert, role: str) -> dict:
     d = {c.name: getattr(e, c.name) for c in Expert.__table__.columns}
-    d["tags"], d["meetings"] = e.tags, e.meetings
+    d["tags"], d["meetings"], d["groups"] = e.tags, e.meetings, e.groups
+    d["focus_label"] = e.focus_label
     if not auth.can_see_sensitive(role):
         for k in ("phone", "email", "wechat"):
             d[k] = importer.mask(d[k])
@@ -197,6 +199,10 @@ def apply_filters(s: Session, f: dict):
         query = query.filter(org_type_cond(f["org_type"]))
     if f["coop"] in COOP_BUCKETS:
         query = query.filter(coop_cond(f["coop"]))
+    if f.get("focus") in FOCUS_LEVELS:
+        query = query.filter(Expert.focus_level == f["focus"])
+    if f.get("group"):
+        query = query.filter(Expert.groups.any(ExpertGroup.id == int(f["group"])))
     return query
 
 
@@ -209,19 +215,22 @@ def facet_counts(s: Session, f: dict) -> dict:
     base = apply_filters(s, f).order_by(None)
     org_types = [(k, label, base_no_org.filter(org_type_cond(k)).count()) for k, (label, _) in ORG_TYPES.items()]
     coop = [(k, label, base_no_coop.filter(coop_cond(k)).count()) for k, label in COOP_BUCKETS.items()]
+    base_no_focus = apply_filters(s, {**f, "focus": ""}).order_by(None)
+    focus = [(k, FOCUS_LEVELS[k], base_no_focus.filter(Expert.focus_level == k).count()) for k in FOCUS_ORDER]
     ids = base.with_entities(Expert.id).subquery()
     top_tags = (s.query(Tag.name, func.count(expert_tag.c.expert_id)).join(expert_tag, Tag.id == expert_tag.c.tag_id)
                 .filter(expert_tag.c.expert_id.in_(s.query(ids.c.id))).group_by(Tag.name)
                 .order_by(func.count(expert_tag.c.expert_id).desc(), Tag.name).limit(10).all())
-    return dict(org_types=org_types, coop=coop, tags=top_tags)
+    return dict(org_types=org_types, coop=coop, tags=top_tags, focus=focus)
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = "", tag: str = "",
           org: str = "", title: str = "", field: str = "", meeting: str = "", org_type: str = "", coop: str = "",
-          sort: str = "updated", dir: str = "", page: int = 1, msg: str = ""):
+          focus: str = "", group: str = "", sort: str = "updated", dir: str = "", page: int = 1, msg: str = ""):
     f = dict(q=q.strip(), tag=tag.strip(), org=org.strip(), title=title.strip(), field=field.strip(),
-             meeting=meeting, org_type=org_type, coop=coop)
+             meeting=meeting, org_type=org_type, coop=coop, focus=focus,
+             group=group if group.isdigit() else "")
     query = apply_filters(s, f)
     dir = dir if dir in ("asc", "desc") else SORT_DEFAULT_DIR.get(sort, "asc")
     expr = sort_expr(s, sort)
@@ -229,12 +238,17 @@ def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str 
     experts, found, page, pages = paginate(query, page)
     params = {k: v for k, v in {**f, "sort": sort, "dir": dir}.items() if v}
     filters = {k: v for k, v in params.items() if k not in ("sort", "dir")}
+    gname = ""
+    if f["group"]:
+        g = s.get(ExpertGroup, int(f["group"]))
+        gname = g.name if g else ""
     labels = dict(q="关键词", tag="标签", org="单位", title="职务", field="研究方向",
                   meeting={"yes": "有合作", "no": "无合作"}.get(meeting, meeting),
-                  org_type=ORG_TYPES.get(org_type, ("", []))[0], coop=COOP_BUCKETS.get(coop, coop))
+                  org_type=ORG_TYPES.get(org_type, ("", []))[0], coop=COOP_BUCKETS.get(coop, coop),
+                  focus=FOCUS_LEVELS.get(focus, focus), group=gname)
     chips = [(k, labels[k], v if k in ("q", "tag", "org", "title", "field") else "") for k, v in filters.items()]
     return render("index.html", request, msg=msg, f={**f, "sort": sort, "dir": dir}, params=params, filters=filters,
-                  chips=chips, facets=facet_counts(s, f),
+                  chips=chips, facets=facet_counts(s, f), groups=visible_groups(s, sess).all(),
                   experts=[view(e, sess["role"]) for e in experts], found=found, page=page, pages=pages,
                   tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count())
 
@@ -250,6 +264,8 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
     if not e:
         return back("/", "专家不存在")
     return render("detail.html", request, e=view(e, sess["role"]), msg=msg, deleted=e.deleted_at,
+                  expert=e, focus_levels=FOCUS_LEVELS, focus_order=FOCUS_ORDER,
+                  my_groups=visible_groups(s, sess).all(),
                   all_tags=s.query(Tag).order_by(Tag.name).all(),
                   logs=history.for_expert(s, eid) if auth.can_see_sensitive(sess["role"]) else [],
                   labels=history.LABELS)
@@ -319,6 +335,112 @@ def expert_purge(eid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
         importer.purge(s, e, sess["name"])
         s.commit()
     return back("/trash", "已彻底删除（历史记录保留）")
+
+
+@app.post("/expert/{eid}/focus")
+def set_focus(eid: int, s: Session = Depends(db), sess=Depends(EDITOR),
+              level: str = Form(""), note: str = Form("")):
+    e = s.get(Expert, eid)
+    if not e:
+        return back("/", "专家不存在")
+    old = (FOCUS_LEVELS.get(e.focus_level, "未分级"), e.focus_note or "")
+    e.focus_level = level if level in FOCUS_LEVELS else ""
+    e.focus_note = note.strip()[:256]
+    new = (FOCUS_LEVELS.get(e.focus_level, "未分级"), e.focus_note)
+    if old != new:
+        history.log(s, sess["name"], "focus", e,
+                    {"关注分级": [old[0], new[0]], "关注说明": [old[1], new[1]]})
+    s.commit()
+    return back(f"/expert/{eid}", "已更新关注分级")
+
+
+@app.get("/focus", response_class=HTMLResponse)
+def focus_page(request: Request, s: Session = Depends(db), sess=Depends(ANY), msg: str = ""):
+    """重点关注：按分级分栏展示，核心/重点在前。"""
+    buckets = []
+    for k in FOCUS_ORDER:
+        rows = live(s.query(Expert)).filter(Expert.focus_level == k).order_by(Expert.updated_at.desc()).all()
+        buckets.append((k, FOCUS_LEVELS[k], [view(e, sess["role"]) for e in rows]))
+    unset = live(s.query(Expert)).filter((Expert.focus_level == "") | Expert.focus_level.is_(None)).count()
+    return render("focus.html", request, buckets=buckets, unset=unset, msg=msg)
+
+
+@app.get("/groups", response_class=HTMLResponse)
+def groups_page(request: Request, s: Session = Depends(db), sess=Depends(ANY), msg: str = ""):
+    return render("groups.html", request, msg=msg, groups=visible_groups(s, sess).all())
+
+
+@app.post("/groups")
+def group_create(s: Session = Depends(db), sess=Depends(EDITOR), name: str = Form(...),
+                 description: str = Form(""), is_public: str = Form("")):
+    name = name.strip()
+    if not name:
+        return back("/groups", "分组名不能为空")
+    g = ExpertGroup(name=name, description=description.strip()[:256],
+                    is_public=1 if is_public else 0, owner=sess["name"])
+    s.add(g)
+    s.commit()
+    return back(f"/groups/{g.id}", f"已创建分组「{name}」")
+
+
+def _group_or_403(s: Session, gid: int, sess: dict, need_write: bool = False) -> ExpertGroup:
+    g = s.get(ExpertGroup, gid)
+    if not g:
+        raise HTTPException(404, "分组不存在")
+    if not g.is_public and g.owner != sess["name"]:
+        raise HTTPException(403, "这是他人的私有分组")
+    if need_write and sess["role"] == "intern":
+        raise HTTPException(403, "无权限")
+    return g
+
+
+@app.get("/groups/{gid}", response_class=HTMLResponse)
+def group_detail(gid: int, request: Request, s: Session = Depends(db), sess=Depends(ANY), msg: str = ""):
+    g = _group_or_403(s, gid, sess)
+    rows = [e for e in g.experts if not e.deleted_at]
+    return render("group_detail.html", request, g=g, msg=msg,
+                  experts=[view(e, sess["role"]) for e in rows], mine=g.owner == sess["name"])
+
+
+@app.post("/groups/{gid}/edit")
+def group_edit(gid: int, s: Session = Depends(db), sess=Depends(EDITOR), name: str = Form(...),
+               description: str = Form(""), is_public: str = Form("")):
+    g = _group_or_403(s, gid, sess, need_write=True)
+    if g.owner != sess["name"] and sess["role"] != "admin":
+        return back(f"/groups/{gid}", "只有创建者或管理员能修改分组")
+    g.name, g.description = name.strip() or g.name, description.strip()[:256]
+    g.is_public = 1 if is_public else 0
+    s.commit()
+    return back(f"/groups/{gid}", "已保存")
+
+
+@app.post("/groups/{gid}/delete")
+def group_delete(gid: int, s: Session = Depends(db), sess=Depends(EDITOR)):
+    g = _group_or_403(s, gid, sess, need_write=True)
+    if g.owner != sess["name"] and sess["role"] != "admin":
+        return back(f"/groups/{gid}", "只有创建者或管理员能删除分组")
+    name = g.name
+    g.experts = []
+    s.delete(g)
+    s.commit()
+    return back("/groups", f"已删除分组「{name}」（专家本身不受影响）")
+
+
+@app.post("/expert/{eid}/groups")
+def expert_groups(eid: int, request: Request, s: Session = Depends(db), sess=Depends(EDITOR),
+                  gid: str = Form(...), action: str = Form("add")):
+    e = s.get(Expert, eid)
+    g = _group_or_403(s, int(gid), sess, need_write=True)
+    if not e:
+        return back("/", "专家不存在")
+    if action == "add" and e not in g.experts:
+        g.experts.append(e)
+        history.log(s, sess["name"], "group_add", e, {}, f"加入分组「{g.name}」")
+    elif action == "del" and e in g.experts:
+        g.experts.remove(e)
+        history.log(s, sess["name"], "group_del", e, {}, f"移出分组「{g.name}」")
+    s.commit()
+    return back(request.headers.get("referer", f"/expert/{eid}").split("?")[0] or f"/expert/{eid}")
 
 
 @app.get("/history", response_class=HTMLResponse)

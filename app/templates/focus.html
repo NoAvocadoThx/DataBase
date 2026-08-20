@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block body %}
+{% set colors = {'core':'core','key':'key','normal':'normal','avoid':'avoid'} %}
+<div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">重点关注</h2>
+<span class="muted">未分级 {{unset}} 位 · <a href="/?focus=">去列表逐个标记</a></span></div>
+{% for key, label, rows in buckets %}
+<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px">
+<h3 style="margin:0"><span class="focus {{key}}">{{label}}</span> <span class="muted" style="font-weight:400">{{rows|length}} 位</span></h3>
+{% if rows %}<a class="btn ghost sm" href="/?focus={{key}}">在列表中筛选</a>{% endif %}</div>
+{% if rows %}<table><tr><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>关注说明</th><th class="num">合作</th></tr>
+{% for e in rows %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
+<td>{{e.field}}</td><td class="muted">{{e.focus_note}}</td><td class="num">{{e.meetings|length}} 次</td></tr>{% endfor %}</table>
+{% else %}<p class="muted" style="margin:0">还没有标记为「{{label}}」的专家。在专家详情页右上角设置关注分级。</p>{% endif %}</div>
+{% endfor %}
+{% endblock %}

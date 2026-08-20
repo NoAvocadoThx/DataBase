@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block body %}
+<h2>专家分组</h2>
+<p class="muted">把专家整理成名单，比如「2026 大会候选」「ADC 专题库」。公开组全团队可见，私有组只有你自己看得到。</p>
+<div class="card flush"><table><tr><th>名称</th><th>说明</th><th>可见性</th><th>创建者</th><th class="num">人数</th></tr>
+{% for g in groups %}<tr><td><a class="name" href="/groups/{{g.id}}">{{g.name}}</a></td><td class="muted">{{g.description}}</td>
+<td><span class="tag {{'warn' if g.is_public else ''}}">{{g.visibility}}</span></td><td>{{g.owner}}</td>
+<td class="num">{{g.experts|selectattr('deleted_at','none')|list|length}}</td></tr>
+{% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">还没有分组，在下面创建第一个</td></tr>{% endfor %}</table></div>
+{% if sess.role in ['admin','planner'] %}
+<div class="card"><h3>新建分组</h3><form method="post" class="row">
+<input name="name" placeholder="分组名称，如 2026 大会候选" required style="width:240px">
+<input name="description" placeholder="说明（可选）" style="width:320px">
+<label class="row" style="margin:0;gap:4px"><input type="checkbox" name="is_public" value="1" checked style="height:auto;width:auto"> 公开给全团队</label>
+<button>创建</button></form></div>{% endif %}
+{% endblock %}

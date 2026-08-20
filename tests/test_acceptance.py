@@ -290,3 +290,62 @@ def test_12_facets_and_chips(client):
     # chip 移除链接只去掉自己
     h = page(client, "/?q=压测&org_type=company&coop=0")
     assert re.search(r'class="x" href="\?[^"]*coop=0[^"]*"', h) and re.search(r'class="x" href="\?[^"]*org_type=company[^"]*"', h)
+
+
+def test_13_focus_levels(client):
+    login(client, "admin", "admin123")
+    client.post("/expert/save", data={"name": "关注甲", "org": "某院", "tags": "ADC"})
+    eid = re.search(r'/expert/(\d+)"', page(client, "/?q=关注甲")).group(1)
+    r = client.post(f"/expert/{eid}/focus", data={"level": "core", "note": "ADC 首选主席人选"})
+    assert "%E5%B7%B2%E6%9B%B4%E6%96%B0" in r.headers["location"]
+    d = page(client, f"/expert/{eid}")
+    assert "核心" in d and "ADC 首选主席人选" in d
+    h = page(client, "/focus")
+    assert "关注甲" in h and "ADC 首选主席人选" in h
+    assert "符合条件 <b style=\"color:var(--teal)\">1</b> 位" in page(client, "/?focus=core&q=关注甲")
+    # 分面里出现计数，且改级别后历史留痕
+    assert re.search(r'focus=core[^"]*"[^>]*>核心<span>\d+</span>', page(client, "/"))
+    client.post(f"/expert/{eid}/focus", data={"level": "avoid", "note": ""})
+    d = page(client, f"/expert/{eid}")
+    assert "不合作" in d and "调整关注分级" in d
+    assert "核心</span> → " in d or "核心" in d  # 历史里记录了旧值
+    # 无效等级被拒
+    client.post(f"/expert/{eid}/focus", data={"level": "bogus", "note": ""})
+    assert "未分级" in page(client, f"/expert/{eid}")
+
+
+def test_14_groups(client):
+    login(client, "admin", "admin123")
+    r = client.post("/groups", data={"name": "2026 大会候选", "description": "第一轮", "is_public": "1"})
+    gid = re.search(r"/groups/(\d+)", r.headers["location"]).group(1)
+    client.post("/expert/save", data={"name": "分组甲", "org": "某院"})
+    eid = re.search(r'/expert/(\d+)"', page(client, "/?q=分组甲")).group(1)
+    client.post(f"/expert/{eid}/groups", data={"gid": gid, "action": "add"})
+    g = page(client, f"/groups/{gid}")
+    assert "分组甲" in g and "2026 大会候选" in g
+    assert "2026 大会候选" in page(client, f"/expert/{eid}")          # 详情页显示所属分组
+    assert "分组甲" in page(client, f"/?group={gid}")                  # 列表按分组筛选
+    assert "加入分组" in page(client, f"/expert/{eid}")                # 历史留痕
+    client.post(f"/expert/{eid}/groups", data={"gid": gid, "action": "del"})
+    assert "这个分组还是空的" in page(client, f"/groups/{gid}")
+    # 私有组：别人看不到
+    r = client.post("/groups", data={"name": "我的私藏", "is_public": ""})
+    pid = re.search(r"/groups/(\d+)", r.headers["location"]).group(1)
+    assert "我的私藏" in page(client, "/groups")
+    login(client, "admin", "admin123")
+    client.post("/users", data={"username": "other", "password": "other1234", "role": "planner"})
+    login(client, "other", "other1234")
+    assert "我的私藏" not in page(client, "/groups")
+    assert client.get(f"/groups/{pid}").status_code == 403
+    assert "2026 大会候选" in page(client, "/groups")                  # 公开组仍可见
+    # 非创建者不能改别人的公开组
+    r = client.post(f"/groups/{gid}/edit", data={"name": "改名", "is_public": "1"})
+    assert "%E5%88%9B%E5%BB%BA%E8%80%85" in r.headers["location"]      # 只有创建者…
+    # 实习生只读
+    login(client, "admin", "admin123")
+    client.post("/users", data={"username": "kid3", "password": "kid123456", "role": "intern"})
+    login(client, "kid3", "kid123456")
+    assert "2026 大会候选" in page(client, "/groups") and "新建分组" not in page(client, "/groups")
+    assert client.post("/groups", data={"name": "x"}).status_code == 403
+    assert client.post(f"/expert/{eid}/groups", data={"gid": gid}).status_code == 403
+    assert client.post(f"/expert/{eid}/focus", data={"level": "core"}).status_code == 403
