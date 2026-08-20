@@ -60,7 +60,7 @@ def redact(text: str) -> str:
 
 # ---------- 规则抽取 ----------
 def _find_title(seg: str) -> str:
-    for w in TITLE_WORDS:
+    for w in sorted(TITLE_WORDS, key=len, reverse=True):  # 先长后短：副主任医师 优先于 主任医师
         if w in seg:
             return w
     return ""

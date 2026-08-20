@@ -69,6 +69,7 @@ def test_rule_extract():
     assert by["张伟"]["org"] == "北京大学肿瘤医院" and by["张伟"]["title"] == "主任医师"
     assert by["李娜"]["email"] == "ln@cpu.edu.cn"
     assert by["王强"]["source_text"].startswith("主持人")
+    assert extract.rule_extract("赵敏 复旦大学附属中山医院 副主任医师")[0]["title"] == "副主任医师"
 
 
 def test_search_ranking(s):
@@ -89,3 +90,23 @@ def test_search_need_meeting(s):
     s.add(Participation(expert_id=zw.id, meeting="2024")); s.commit()
     res = search.search(s, search.parse_query("参加过我们会议的ADC专家", ["ADC"]))
     assert res[0][0].name == "张伟" and "会议" in " ".join(res[0][2])
+    importer.import_excel(s, xlsx([["无关", "某院", "", "骨科", "", "", "", "", "", ""]]), "x")
+    wg = s.query(Expert).filter_by(name="无关").one()
+    s.add(Participation(expert_id=wg.id, meeting="2023")); s.commit()
+    res = search.search(s, search.parse_query("参加过我们会议的ADC专家", ["ADC"]))
+    assert [e.name for e, _, _ in res] == ["张伟", "陈静"]  # 仅参会不命中
+
+
+def test_migrate_adds_missing_columns(tmp_path):
+    import sqlite3
+    from app.models import make_engine, init_db, Expert
+    from sqlalchemy.orm import sessionmaker
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE expert (id INTEGER PRIMARY KEY, name VARCHAR(64) NOT NULL, org VARCHAR(128))")
+    con.execute("INSERT INTO expert (name, org) VALUES ('老数据', '旧单位')")
+    con.commit(); con.close()
+    eng = make_engine(str(db)); init_db(eng)
+    s = sessionmaker(bind=eng)()
+    e = s.query(Expert).one()
+    assert e.name == "老数据" and e.source_text is None

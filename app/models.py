@@ -108,3 +108,17 @@ SessionLocal = sessionmaker(bind=engine)
 def init_db(eng=engine):
     Base.metadata.create_all(eng)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    _migrate(eng)
+
+
+def _migrate(eng):
+    """轻量迁移：模型新增的列自动 ALTER TABLE ADD COLUMN（SQLite 不支持删列，只做加列）。"""
+    from sqlalchemy import inspect, text
+    insp = inspect(eng)
+    with eng.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in existing:
+                    ctype = col.type.compile(eng.dialect)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ctype}'))

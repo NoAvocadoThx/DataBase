@@ -65,10 +65,12 @@ def score(e: Expert, parsed: dict) -> tuple[int, list[str]]:
     if org and e.org and org in e.org:
         reasons.append(f"单位“{e.org}”")
         pts += 2
+    topical = bool(parsed.get("keywords") or parsed.get("tags") or org)
     if parsed.get("need_meeting"):
         if e.meetings:
-            reasons.append(f"参加过 {len(e.meetings)} 次会议")
-            pts += 2
+            if reasons or not topical:  # 有主题条件时，仅凭"参加过会议"不算命中
+                reasons.append(f"参加过 {len(e.meetings)} 次会议")
+                pts += 2
         else:
             pts -= 1
     return pts, reasons
