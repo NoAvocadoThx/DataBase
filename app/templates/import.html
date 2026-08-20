@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block body %}
 <h2>Excel 导入</h2>
-<div class="card"><form method="post" enctype="multipart/form-data" class="row"><input type="file" name="file" accept=".xlsx" required><button class="mark">导入</button></form>
+<div class="card"><form method="post" enctype="multipart/form-data" class="row"><input type="file" name="file" accept=".xlsx" required><button>导入</button></form>
 <p class="muted" style="margin:12px 0 0">第一行为列名，支持的列：{% for c in cols %}<span class="tag">{{c}}</span>{% endfor %}<br>
 去重规则：姓名 + 单位相同 → 更新已有记录；仅同名 → 新建并进入“疑似重复”待处理。每一行的变化都会写入操作历史。</p></div>
 {% endblock %}

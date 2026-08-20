@@ -1,11 +1,11 @@
 {% extends "base.html" %}{% block body %}
 <h2>资料录入</h2>
 <div class="card"><h3>上传资料 <span class="muted">会议议程 / 嘉宾名单 / 简历 · PDF、Word、PPT、TXT</span></h3>
-<form method="post" enctype="multipart/form-data" class="row"><input type="file" name="file" accept=".pdf,.docx,.pptx,.txt" required><button class="mark">上传并提取</button></form>
+<form method="post" enctype="multipart/form-data" class="row"><input type="file" name="file" accept=".pdf,.docx,.pptx,.txt" required><button>上传并提取</button></form>
 <p class="muted" style="margin:10px 0 0">{% if llm_on %}大模型已启用，敏感信息打码后发送{% else %}未配置大模型，使用规则抽取{% endif %}。提取结果需人工审核后才入库。</p></div>
-<div class="card" style="padding:0 0 6px"><table><tr><th>文件</th><th>上传人</th><th>时间</th><th>状态</th><th></th></tr>
+<div class="card flush"><table><tr><th>文件</th><th>上传人</th><th>时间</th><th>状态</th><th></th></tr>
 {% for d in docs %}<tr><td><a href="/documents/{{d.id}}">{{d.filename}}</a></td><td>{{d.uploaded_by}}</td><td class="num">{{d.created_at.strftime('%m-%d %H:%M')}}</td>
-<td>{% if d.status=='pending' %}<span class="tag warn">待审核</span>{% else %}<span class="tag" style="background:var(--ok-bg);color:var(--ok)">已入库</span>{% endif %}</td>
+<td>{% if d.status=='pending' %}<span class="tag warn">待审核</span>{% else %}<span class="tag ok">已入库</span>{% endif %}</td>
 <td style="text-align:right">{% if sess.role=='admin' %}<form method="post" action="/documents/{{d.id}}/delete" onsubmit="return confirm('删除这份资料文件？已入库的专家不受影响')"><button class="ghost">删除</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">还没有上传过资料</td></tr>{% endfor %}</table></div>
 {% endblock %}

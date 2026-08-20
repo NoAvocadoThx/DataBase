@@ -141,41 +141,88 @@ def paginate(query, page: int, size: int = PAGE_SIZE):
     return query.offset((page - 1) * size).limit(size).all(), total, page, pages
 
 
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = "", tag: str = "",
-          org: str = "", title: str = "", field: str = "", meeting: str = "", sort: str = "updated",
-          dir: str = "", page: int = 1, msg: str = ""):
+ORG_TYPES = {  # 单位类型分面：按单位名关键词归类
+    "hospital": ("医院", ["医院", "医学中心", "诊所"]),
+    "academy": ("高校 / 科研院所", ["大学", "学院", "研究所", "研究院", "科学院"]),
+    "company": ("药企 / 企业", ["公司", "集团", "制药", "药业", "生物", "医药", "科技"]),
+    "regulator": ("监管 / 协会", ["药监", "药审", "卫健", "协会", "学会", "中心"]),
+}
+COOP_BUCKETS = {"0": "未合作", "1-2": "低频 (1–2)", "3": "高频 (3+)"}
+
+
+def org_type_cond(key: str):
+    words = ORG_TYPES[key][1]
+    return or_(*[Expert.org.like(f"%{w}%") for w in words])
+
+
+def coop_cond(key: str):
+    from sqlalchemy import func, select
+    cnt = select(func.count(Participation.id)).where(Participation.expert_id == Expert.id).scalar_subquery()
+    return {"0": cnt == 0, "1-2": cnt.between(1, 2), "3": cnt >= 3}[key]
+
+
+def apply_filters(s: Session, f: dict):
     query = live(s.query(Expert))
-    for kw in q.split():  # 多个关键词 = AND，每个词匹配任一字段
+    for kw in f["q"].split():  # 多个关键词 = AND，每个词匹配任一字段
         like = f"%{kw}%"
         query = query.filter(or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
                                  Expert.field.like(like), Expert.bio.like(like)))
-    if org:
-        query = query.filter(Expert.org.like(f"%{org}%"))
-    if title:
-        query = query.filter(Expert.title.like(f"%{title}%"))
-    if field:
-        query = query.filter(Expert.field.like(f"%{field}%"))
-    for tname in [x for x in importer.split_tags(tag) if x]:  # 多标签 = AND
+    if f["org"]:
+        query = query.filter(Expert.org.like(f"%{f['org']}%"))
+    if f["title"]:
+        query = query.filter(Expert.title.like(f"%{f['title']}%"))
+    if f["field"]:
+        query = query.filter(Expert.field.like(f"%{f['field']}%"))
+    for tname in [x for x in importer.split_tags(f["tag"]) if x]:  # 多标签 = AND
         query = query.filter(Expert.tags.any(Tag.name == tname))
-    if meeting == "yes":
+    if f["meeting"] == "yes":
         query = query.filter(Expert.meetings.any())
-    elif meeting == "no":
+    elif f["meeting"] == "no":
         query = query.filter(~Expert.meetings.any())
+    if f["org_type"] in ORG_TYPES:
+        query = query.filter(org_type_cond(f["org_type"]))
+    if f["coop"] in COOP_BUCKETS:
+        query = query.filter(coop_cond(f["coop"]))
+    return query
+
+
+def facet_counts(s: Session, f: dict) -> dict:
+    """分面计数：每个分面在"去掉自身条件"的结果集上统计，这样点选后其他选项仍可见。"""
+    from sqlalchemy import func
+    from .models import expert_tag
+    base_no_org = apply_filters(s, {**f, "org_type": ""}).order_by(None)
+    base_no_coop = apply_filters(s, {**f, "coop": ""}).order_by(None)
+    base = apply_filters(s, f).order_by(None)
+    org_types = [(k, label, base_no_org.filter(org_type_cond(k)).count()) for k, (label, _) in ORG_TYPES.items()]
+    coop = [(k, label, base_no_coop.filter(coop_cond(k)).count()) for k, label in COOP_BUCKETS.items()]
+    ids = base.with_entities(Expert.id).subquery()
+    top_tags = (s.query(Tag.name, func.count(expert_tag.c.expert_id)).join(expert_tag, Tag.id == expert_tag.c.tag_id)
+                .filter(expert_tag.c.expert_id.in_(s.query(ids.c.id))).group_by(Tag.name)
+                .order_by(func.count(expert_tag.c.expert_id).desc(), Tag.name).limit(10).all())
+    return dict(org_types=org_types, coop=coop, tags=top_tags)
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = "", tag: str = "",
+          org: str = "", title: str = "", field: str = "", meeting: str = "", org_type: str = "", coop: str = "",
+          sort: str = "updated", dir: str = "", page: int = 1, msg: str = ""):
+    f = dict(q=q.strip(), tag=tag.strip(), org=org.strip(), title=title.strip(), field=field.strip(),
+             meeting=meeting, org_type=org_type, coop=coop)
+    query = apply_filters(s, f)
     dir = dir if dir in ("asc", "desc") else SORT_DEFAULT_DIR.get(sort, "asc")
     expr = sort_expr(s, sort)
     query = query.order_by(expr.desc().nullslast() if dir == "desc" else expr.asc().nullsfirst(), Expert.id.desc())
     experts, found, page, pages = paginate(query, page)
-    pend = s.query(DuplicateCandidate).filter_by(status="pending").count()
-    trash = s.query(Expert).filter(Expert.deleted_at.isnot(None)).count()
-    docs = s.query(Document).filter_by(status="pending").count()
-    params = {k: v for k, v in dict(q=q, tag=tag, org=org, title=title, field=field, meeting=meeting, sort=sort, dir=dir).items() if v}
+    params = {k: v for k, v in {**f, "sort": sort, "dir": dir}.items() if v}
     filters = {k: v for k, v in params.items() if k not in ("sort", "dir")}
-    return render("index.html", request, msg=msg, f=dict(q=q, tag=tag, org=org, title=title, field=field,
-                  meeting=meeting, sort=sort, dir=dir), params=params, filters=filters,
+    labels = dict(q="关键词", tag="标签", org="单位", title="职务", field="研究方向",
+                  meeting={"yes": "有合作", "no": "无合作"}.get(meeting, meeting),
+                  org_type=ORG_TYPES.get(org_type, ("", []))[0], coop=COOP_BUCKETS.get(coop, coop))
+    chips = [(k, labels[k], v if k in ("q", "tag", "org", "title", "field") else "") for k, v in filters.items()]
+    return render("index.html", request, msg=msg, f={**f, "sort": sort, "dir": dir}, params=params, filters=filters,
+                  chips=chips, facets=facet_counts(s, f),
                   experts=[view(e, sess["role"]) for e in experts], found=found, page=page, pages=pages,
-                  tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count(),
-                  pending_dup=pend, pending_docs=docs, trash=trash)
+                  tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count())
 
 
 @app.get("/expert/new", response_class=HTMLResponse)

@@ -1,11 +1,12 @@
 {% extends "base.html" %}{% block body %}
 <h2>找专家</h2>
-<div class="card"><form class="row"><input name="q" value="{{q}}" style="flex:1;font-size:1.05rem;padding:10px 14px" placeholder="用一句话描述，例如：做 ADC 药物临床研究、参加过我们会议的专家" autofocus><button class="mark" style="padding:10px 18px">找专家</button></form>
+<div class="card"><form class="search"><input name="q" value="{{q}}" placeholder="用一句话描述，例如：做 ADC 药物临床研究、参加过我们会议的专家" autofocus><button>找专家</button></form>
 <p class="muted" style="margin:8px 0 0">{% if llm_on %}大模型已启用，会先理解你的问题再检索{% else %}未配置大模型，按关键词和标签匹配{% endif %}。结果附带推荐依据。</p></div>
-{% if parsed %}<div class="card" style="background:#FFF6D6;border-color:#F1D98A"><b>系统理解：</b>{{parsed.explain}}
+{% if parsed %}<div class="panel"><b>系统理解：</b>{{parsed.explain}}
 <div class="muted" style="margin-top:4px">关键词 {{parsed.keywords|join(' / ') or '—'}} · 标签 {{parsed.tags|join(' / ') or '—'}}{% if parsed.org %} · 单位 {{parsed.org}}{% endif %}{% if parsed.need_meeting %} · 要求有合作历史{% endif %}</div></div>
-<div class="card" style="padding:0 0 6px"><table><tr><th style="width:40px">#</th><th>专家</th><th>单位 / 职务</th><th>研究方向</th><th>推荐依据</th></tr>
+<div class="card flush"><table><tr><th class="num" style="width:40px">#</th><th>专家</th><th>单位 / 职务</th><th>研究方向</th><th>推荐依据</th></tr>
 {% for e, pts, reasons in results %}<tr><td class="num">{{loop.index}}</td><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td>
 <td>{{e.org}}<br><span class="muted">{{e.title}}</span></td><td>{{e.field}}</td><td class="reason">{{reasons|join('；')}}</td></tr>
-{% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">没有匹配的专家。换个说法，或者去 <a href="/">专家列表</a> 按条件筛选。</td></tr>{% endfor %}</table></div>{% endif %}
+{% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">没有匹配的专家。换个说法，或者去 <a href="/">专家列表</a> 按条件筛选。</td></tr>{% endfor %}</table>
+{% if results|length >= 50 %}<p class="muted" style="padding:8px 14px 0">只显示前 50 位，按匹配度排序</p>{% endif %}</div>{% endif %}
 {% endblock %}

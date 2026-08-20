@@ -5,9 +5,9 @@
 <div class="row"><input name="meeting" placeholder="会议名称" style="width:320px"><input name="year" placeholder="年份" style="width:90px"></div></div></div></div>
 {% for c in cands %}{% set i = loop.index0 %}<div class="cand {{'dup' if c.existing else 'new'}}">
 <div class="row" style="justify-content:space-between"><label style="font-size:.95rem;color:var(--ink);margin:0"><input type="checkbox" name="accept_{{i}}" checked> <b>入库</b></label>
-{% if c.existing %}<span class="tag warn">库中已有同名：{{c.existing|join('、')}}（单位一致则更新，否则新建并进疑似重复）</span>{% else %}<span class="tag" style="background:var(--ok-bg);color:var(--ok)">新专家</span>{% endif %}</div>
+{% if c.existing %}<span class="tag warn">库中已有同名：{{c.existing|join('、')}}（单位一致则更新，否则新建并进疑似重复）</span>{% else %}<span class="tag ok">新专家</span>{% endif %}</div>
 <div class="grid" style="margin-top:10px">
-<div><label>姓名</label><input name="name_{{i}}" value="{{c.name}}" class="w" style="font-family:var(--serif);font-weight:600"></div>
+<div><label>姓名</label><input name="name_{{i}}" value="{{c.name}}" class="w" style="font-weight:600"></div>
 <div><label>单位</label><input name="org_{{i}}" value="{{c.org}}" class="w"></div>
 <div><label>职务</label><input name="title_{{i}}" value="{{c.title}}" class="w"></div>
 <div><label>研究方向</label><input name="field_{{i}}" value="{{c.field}}" class="w"></div>
@@ -18,6 +18,6 @@
 <div class="full"><label>标签 <span class="muted">逗号分隔，留空则不改</span></label><input name="tags_{{i}}" class="w"></div>
 <div class="full"><label>来源原文</label><input name="source_text_{{i}}" value="{{c.source_text}}" class="w" style="font-size:.82rem;color:var(--ink-2)"></div></div></div>
 {% else %}<div class="card muted">没有提取到候选专家。展开下方原文核对，或 <a href="/expert/new">手工新增</a>。</div>{% endfor %}
-{% if cands and doc.status=='pending' %}<div class="card row"><button class="mark">确认入库勾选的专家</button><span class="muted">入库后可在专家详情的“修改历史”里看到来源</span></div>{% endif %}</form>
+{% if cands and doc.status=='pending' %}<div class="card row"><button>确认入库勾选的专家</button><span class="muted">入库后可在专家详情的“修改历史”里看到来源</span></div>{% endif %}</form>
 <div class="card"><details><summary class="muted">查看提取的原文</summary><div class="src" style="max-height:400px;overflow:auto;margin-top:8px">{{doc.text}}</div></details></div>
 {% endblock %}

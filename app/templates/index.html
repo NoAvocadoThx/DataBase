@@ -1,32 +1,44 @@
-{% extends "base.html" %}{% block body %}
+{% extends "base.html" %}{% block mainclass %}wide{% endblock %}{% block body %}
+{% macro facet_link(key, val, label, n) -%}
+{% set on = f[key] == val %}{% set qs = filters|dictsort|rejectattr('0','equalto',key)|list %}
+<a class="{{'on' if on}}" href="?{{ (dict(qs) | urlencode) }}{% if not on %}&{{key}}={{val|urlencode}}{% endif %}">{{label}}<span>{{'{:,}'.format(n)}}</span></a>
+{%- endmacro %}
+<div class="split">
+<aside class="facets">
+<h4>单位类型</h4>{% for k, label, n in facets.org_types %}{{facet_link('org_type', k, label, n)}}{% endfor %}
+<h4>常用标签</h4>{% for name, n in facets.tags %}{{facet_link('tag', name, name, n)}}{% else %}<span class="muted" style="padding:0 8px">暂无标签</span>{% endfor %}
+<h4>合作频次</h4>{% for k, label, n in facets.coop %}{{facet_link('coop', k, label, n)}}{% endfor %}
+</aside>
+<section>
 <div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">专家列表</h2>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new">+ 新增专家</a>{% endif %}</div>
-<div class="card"><form class="filters">
-<div style="grid-column:span 2"><label>关键词 <span class="muted">空格分隔多个，全部满足</span></label><input name="q" value="{{f.q}}" placeholder="姓名 / 单位 / 职务 / 方向 / 简介" class="w"></div>
-<div><label>单位</label><input name="org" value="{{f.org}}" class="w"></div>
-<div><label>职务 / 职称</label><input name="title" value="{{f.title}}" list="titles" class="w">
-<datalist id="titles"><option>教授<option>副教授<option>主任医师<option>副主任医师<option>研究员<option>审评员<option>总裁<option>首席科学家</datalist></div>
-<div><label>研究方向</label><input name="field" value="{{f.field}}" class="w"></div>
-<div><label>标签 <span class="muted">逗号分隔，全部满足</span></label><input name="tag" value="{{f.tag}}" list="taglist" class="w">
-<datalist id="taglist">{% for t in tags %}<option value="{{t.name}}">{% endfor %}</datalist></div>
-<div><label>合作记录</label><select name="meeting" class="w"><option value="">不限</option><option value="yes" {% if f.meeting=='yes' %}selected{% endif %}>有合作</option><option value="no" {% if f.meeting=='no' %}selected{% endif %}>无合作</option></select></div>
-<div><label>排序</label><select name="sort" class="w">
-<option value="updated" {% if f.sort=='updated' %}selected{% endif %}>最近更新</option><option value="created" {% if f.sort=='created' %}selected{% endif %}>最近新增</option>
+<div class="card"><form>
+<input type="hidden" name="org_type" value="{{f.org_type}}"><input type="hidden" name="coop" value="{{f.coop}}"><input type="hidden" name="dir" value="{{f.dir}}">
+<div class="search"><input name="q" value="{{f.q}}" placeholder="搜索姓名、单位、职务或研究方向（空格分隔多个词）" autofocus><button>筛选</button></div>
+<div class="sub">
+<input name="org" value="{{f.org}}" placeholder="单位"><input name="title" value="{{f.title}}" placeholder="职务 / 职称" list="titles">
+<datalist id="titles"><option>教授<option>副教授<option>主任医师<option>副主任医师<option>研究员<option>审评员<option>总裁<option>首席科学家</datalist>
+<input name="field" value="{{f.field}}" placeholder="研究方向"><input name="tag" value="{{f.tag}}" placeholder="标签（逗号分隔）" list="taglist">
+<datalist id="taglist">{% for t in tags %}<option value="{{t.name}}">{% endfor %}</datalist>
+<select name="meeting"><option value="">合作记录：不限</option><option value="yes" {% if f.meeting=='yes' %}selected{% endif %}>有合作</option><option value="no" {% if f.meeting=='no' %}selected{% endif %}>无合作</option></select>
+<select name="sort"><option value="updated" {% if f.sort=='updated' %}selected{% endif %}>排序：最近更新</option><option value="created" {% if f.sort=='created' %}selected{% endif %}>最近新增</option>
 {% for k, v in [('name','姓名'),('org','单位'),('title','职务'),('field','研究方向'),('tags','标签'),('phone','手机'),('meetings','合作次数')] %}<option value="{{k}}" {% if f.sort==k %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
-<input type="hidden" name="dir" value="{{f.dir}}"></div>
-<div class="row"><button>筛选</button><a class="btn ghost" href="/">清除</a></div>
-</form>
-<p class="muted" style="margin:12px 0 0">库中 {{total}} 位 · 符合条件 <b style="color:var(--ink)">{{found}}</b> 位</p></div>
-{% macro th(key, label) -%}
+</div></form>
+{% if chips %}<div class="row" style="margin-top:12px"><span class="muted">当前筛选：</span>
+{% for key, label, val in chips %}{% set rest = dict(filters|dictsort|rejectattr('0','equalto',key)|list) %}<span class="chip"><b>{{label}}{% if val %}:{% endif %}</b>{{val}}<a class="x" href="?{{rest|urlencode}}" title="移除">×</a></span>{% endfor %}
+<a class="muted" href="/" style="text-decoration:none">清除全部</a></div>{% endif %}
+<p class="muted" style="margin:12px 0 0">库中 {{'{:,}'.format(total)}} 位 · 符合条件 <b style="color:var(--teal)">{{found}}</b> 位</p></div>
+{% macro th(key, label, cls='') -%}
 {% set active = f.sort == key %}{% set first = 'desc' if key == 'meetings' else 'asc' %}{% set second = 'asc' if first == 'desc' else 'desc' %}
 {% if not active %}{% set href = '?' ~ filters|urlencode ~ '&sort=' ~ key ~ '&dir=' ~ first %}{% set tip = '点击排序' %}
 {% elif f.dir == first %}{% set href = '?' ~ filters|urlencode ~ '&sort=' ~ key ~ '&dir=' ~ second %}{% set tip = '再点反向' %}
 {% else %}{% set href = '?' ~ filters|urlencode %}{% set tip = '再点恢复默认排序' %}{% endif %}
-<th><a href="{{href}}" class="{{'on' if active}}" title="{{tip}}">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span class="dim">⇅</span>{% endif %}</a></th>
+<th class="{{cls}}"><a href="{{href}}" class="{{'on' if active}}" title="{{tip}}">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span class="dim">⇅</span>{% endif %}</a></th>
 {%- endmacro %}
-<div class="card" style="padding:0 0 12px"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('phone','手机')}}{{th('meetings','合作')}}</tr>
+<div class="card flush"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('phone','手机','num')}}{{th('meetings','合作','num')}}</tr>
 {% for e in experts %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
-<td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td><td class="num">{{e.phone}}</td><td>{{e.meetings|length}} 次</td></tr>
+<td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td><td class="num">{{e.phone}}</td><td class="num">{{e.meetings|length}} 次</td></tr>
 {% else %}<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">暂无数据{% if params %}，试试放宽筛选条件{% elif sess.role=='admin' %}，先 <a href="/import">导入 Excel</a> 或 <a href="/documents">上传资料</a>{% endif %}</td></tr>{% endfor %}</table>
 <div style="padding:0 14px">{% include "_pager.html" %}</div></div>
+</section></div>
 {% endblock %}

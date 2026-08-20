@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block body %}
 <h2>回收站 <span class="muted" style="font-weight:400">{{items|length}} 位</span></h2>
 <p class="muted">删除和被合并的专家都在这里，可随时恢复。彻底删除后数据不可恢复，但操作历史保留。</p>
-<div class="card" style="padding:0 0 6px"><table><tr><th>姓名</th><th>单位</th><th>研究方向</th><th>删除时间</th><th>操作人</th><th></th></tr>
+<div class="card flush"><table><tr><th>姓名</th><th>单位</th><th>研究方向</th><th>删除时间</th><th>操作人</th><th></th></tr>
 {% for e in items %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.field}}</td>
 <td class="num">{{e.deleted_at.strftime('%Y-%m-%d %H:%M')}}</td><td>{{e.deleted_by}}</td>
 <td><div class="row" style="justify-content:flex-end"><form method="post" action="/expert/{{e.id}}/restore"><button class="ghost">恢复</button></form>

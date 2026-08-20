@@ -180,7 +180,7 @@ def test_8_history_and_trash(client):
     client.post(f"/expert/{eid}/restore")
     assert "测试专家" in page(client, "/?q=测试专家") and "测试专家" not in page(client, "/trash")
     d = page(client, f"/expert/{eid}")
-    assert "从回收站恢复" in d and d.count("<span class=\"tag\"") >= 5  # 多条历史
+    assert "从回收站恢复" in d and d.count("<span class=\"tag ") >= 5  # 多条历史
     # 彻底删除必须先在回收站
     client.post(f"/expert/{eid}/purge")
     assert "测试专家" in page(client, "/?q=测试专家")
@@ -206,21 +206,21 @@ def test_9_list_filters_pagination_history_filters(client):
     b = _io.BytesIO(); wb.save(b)
     client.post("/import", files={"file": ("p.xlsx", b.getvalue())})
     h = page(client, "/?q=压测")
-    assert "符合条件 <b style=\"color:var(--ink)\">120</b> 位" in h and "第 1/3 页" in h and h.count("<td><a class=\"name\" href=\"/expert/") == 50
+    assert "符合条件 <b style=\"color:var(--teal)\">120</b> 位" in h and "第 1/3 页" in h and h.count("<td><a class=\"name\" href=\"/expert/") == 50
     h = page(client, "/?q=压测&page=3")
     assert h.count("<td><a class=\"name\" href=\"/expert/") == 20
     h = page(client, "/?q=压测&org=大学&title=教授&field=ADC&tag=压测,偶数&meeting=no&sort=name")
     n = int(re.search(r"符合条件 <b[^>]*>(\d+)</b> 位", h).group(1))
     assert 0 < n < 60 and "压测大学" in h and "压测医院" not in h
-    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 位" in page(client, "/?q=压测 不存在的词")
+    assert "符合条件 <b style=\"color:var(--teal)\">0</b> 位" in page(client, "/?q=压测 不存在的词")
     # 多关键词 AND
-    assert "符合条件 <b style=\"color:var(--ink)\">60</b> 位" in page(client, "/?q=压测 医院")
+    assert "符合条件 <b style=\"color:var(--teal)\">60</b> 位" in page(client, "/?q=压测 医院")
     # 操作历史筛选
     h = page(client, "/history?action=import&name=压测001")
-    assert "符合条件 <b style=\"color:var(--ink)\">1</b> 条" in h and "Excel导入" in h
-    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 条" in page(client, "/history?actor=nobody")
+    assert "符合条件 <b style=\"color:var(--teal)\">1</b> 条" in h and "Excel导入" in h
+    assert "符合条件 <b style=\"color:var(--teal)\">0</b> 条" in page(client, "/history?actor=nobody")
     h = page(client, "/history?date_from=2000-01-01&date_to=2000-01-02")
-    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 条" in h
+    assert "符合条件 <b style=\"color:var(--teal)\">0</b> 条" in h
     h = page(client, "/history?action=import")
     assert "第 1/" in h  # 分页出现
 
@@ -237,9 +237,9 @@ def test_10_column_sort(client):
     assert "单位 ▼" in h and 'href="?q=%E5%8E%8B%E6%B5%8B"' in h  # 第三次恢复默认
     h = page(client, "/?q=压测&sort=meetings&dir=desc")
     assert "合作 ▼" in h and 'sort=meetings&amp;dir=asc' in h
-    rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=desc"))
+    rows = re.findall(r'<td class="num">(\d+) 次</td>', page(client, "/?sort=meetings&dir=desc"))
     assert rows == sorted(rows, key=int, reverse=True) and int(rows[0]) >= 1
-    rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=asc"))
+    rows = re.findall(r'<td class="num">(\d+) 次</td>', page(client, "/?sort=meetings&dir=asc"))
     assert rows[0] == "0"
     tags_first = re.findall(r'<td>(?:<a class="tag"[^>]*>([^<]*)</a>)', page(client, "/?sort=tags&dir=asc&meeting=yes"))
     assert tags_first == sorted(tags_first)
@@ -266,3 +266,24 @@ def test_11_account_and_reset_password(client):
     uid = re.search(r'/users/(\d+)/reset', page(client, "/users").split("lily")[1]).group(1)
     client.post(f"/users/{uid}/reset", data={"password": "reset123"})
     login(client, "lily", "reset123")
+
+
+def test_12_facets_and_chips(client):
+    login(client, "admin", "admin123")
+    h = page(client, "/")
+    assert "单位类型" in h and "常用标签" in h and "合作频次" in h
+    m = re.search(r'href="\?([^"]*)org_type=academy[^"]*"[^>]*>高校 / 科研院所<span>([\d,]+)</span>', h)
+    assert m and int(m.group(2).replace(",", "")) > 0
+    h = page(client, "/?org_type=academy&q=压测")
+    n = int(re.search(r"符合条件 <b[^>]*>(\d+)</b> 位", h).group(1))
+    assert 0 < n <= 60 and "压测医院" not in h
+    assert "当前筛选：" in h and "高校 / 科研院所" in h and 'class="chip"' in h
+    # 点分面第二次 = 取消
+    assert 'class="on" href="?q=%E5%8E%8B%E6%B5%8B"' in h
+    # 合作频次
+    h0 = page(client, "/?coop=0&q=压测"); h3 = page(client, "/?coop=3&q=压测")
+    n0 = int(re.search(r"符合条件 <b[^>]*>(\d+)</b> 位", h0).group(1)); n3 = int(re.search(r"符合条件 <b[^>]*>(\d+)</b> 位", h3).group(1))
+    assert n0 >= 100 and n3 == 0, (n0, n3, re.search(r"name=.coop. value=.([^\"]*).", h3).group(0))
+    # chip 移除链接只去掉自己
+    h = page(client, "/?q=压测&org_type=company&coop=0")
+    assert re.search(r'class="x" href="\?[^"]*coop=0[^"]*"', h) and re.search(r'class="x" href="\?[^"]*org_type=company[^"]*"', h)

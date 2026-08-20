@@ -2,14 +2,14 @@
 {% if deleted %}<div class="msg bad">该专家已于 {{deleted.strftime('%Y-%m-%d %H:%M')}} 删除，目前在回收站中。
 {% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/restore" style="display:inline;margin-left:8px"><button class="ghost">恢复</button></form>{% endif %}</div>{% endif %}
 
-<div class="badge">
+<div class="card namecard">
 <div><div class="nm">{{e.name}}</div><div class="org">{{e.org or '单位未填写'}}</div><div class="ttl">{{e.title}}</div>
 <div class="kv">
-<b>研究方向</b><span>{{e.field or '—'}}</span>
-<b>手机</b><span class="mono">{{e.phone or '—'}}</span>
-<b>邮箱</b><span class="mono">{{e.email or '—'}}</span>
-<b>微信</b><span class="mono">{{e.wechat or '—'}}</span>
-<b>标签</b><span>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}—{% endfor %}</span>
+<div><b>研究方向</b>{{e.field or '—'}}</div>
+<div><b>手机</b><span class="mono">{{e.phone or '—'}}</span></div>
+<div><b>邮箱</b><span class="mono">{{e.email or '—'}}</span></div>
+<div><b>微信</b><span class="mono">{{e.wechat or '—'}}</span></div>
+<div style="grid-column:span 2"><b>标签</b>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}—{% endfor %}</div>
 </div></div>
 <div class="side">{% if sess.role in ['admin','planner'] and not deleted %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a><br><br>{% endif %}
 来源 {{e.source or '—'}}<br>更新 {{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else ''}}</div>
@@ -30,5 +30,5 @@
 
 {% if can_sensitive %}<div class="card"><h3>修改历史</h3><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
 {% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></div>{% endif %}
-{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可以恢复。确定删除 {{e.name}}？')"><button class="danger">删除专家</button></form>{% endif %}
+{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可以恢复。确定删除 {{e.name}}？')" class="row"><button class="danger">删除专家</button><span class="muted">删除后进入回收站，可恢复</span></form>{% endif %}
 {% endblock %}
