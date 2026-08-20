@@ -1,6 +1,6 @@
 {# 复用：历史记录表格行。变量 logs, labels, show_expert #}
 {% for c in logs %}<tr>
-<td class="muted" style="white-space:nowrap">{{c.created_at.strftime('%Y-%m-%d %H:%M')}}</td>
+<td class="mono muted">{{c.created_at.strftime('%Y-%m-%d %H:%M')}}</td>
 <td>{{c.actor}}</td>
 {% if show_expert %}<td><a href="/expert/{{c.expert_id}}">{{c.expert_name}}</a></td>{% endif %}
 <td><span class="tag {% if c.action in ['delete','purge'] %}bad{% elif c.action in ['create','restore'] or (c.action in ['import','approve'] and not c.is_diff) %}ok{% else %}warn{% endif %}">{{c.action_label}}</span></td>
