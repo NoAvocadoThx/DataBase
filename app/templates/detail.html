@@ -17,7 +17,7 @@
 
 <div class="card"><h3>简介</h3><p style="margin:0 0 10px">{{e.bio or '（暂无）'}}</p>
 {% if can_sensitive and e.note %}<h4>内部备注</h4><p style="margin:0 0 10px">{{e.note}}</p>{% endif %}
-{% if e.source_text %}<h4>录入时的原文</h4><div class="src">{{e.source_text}}</div>{% endif %}</div>
+{% if e.source_text and can_sensitive %}<h4>录入时的原文</h4><div class="src">{{e.source_text}}</div>{% endif %}</div>
 
 <div class="card"><h3>合作历史 <span class="muted">{{e.meetings|length}} 次</span></h3>
 <table><tr><th>会议</th><th>年份</th><th>角色</th><th>报告主题</th><th></th></tr>

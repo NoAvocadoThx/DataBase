@@ -32,10 +32,16 @@ def db():
 
 @app.middleware("http")
 async def session_mw(request: Request, call_next):
-    request.state.session = auth.read_session(request)
+    sess = auth.read_session(request)
+    if sess:  # 用户被删除、改角色或改密码后，旧 Cookie 立即失效
+        with SessionLocal() as s:
+            u = s.get(User, sess.get("uid"))
+            if not u or u.role != sess.get("role") or u.password_hash[:16] != sess.get("pw"):
+                sess = None
+    request.state.session = sess
     resp = await call_next(request)
     if resp.status_code == 401:
-        return RedirectResponse(f"/login?next={quote(str(request.url.path))}", status_code=303)
+        return RedirectResponse(f"/login?next={quote(auth.safe_next(str(request.url.path)))}", status_code=303)
     return resp
 
 
@@ -67,6 +73,7 @@ def view(e: Expert, role: str) -> dict:
         for k in ("phone", "email", "wechat"):
             d[k] = importer.mask(d[k])
         d["note"] = ""
+        d["source_text"] = ""  # 录入原文常含手机/邮箱，不能绕过脱敏
     return d
 
 
@@ -79,18 +86,23 @@ def login_page(request: Request, next: str = "/", msg: str = ""):
 @app.post("/login")
 def login(request: Request, s: Session = Depends(db), username: str = Form(...),
           password: str = Form(...), next: str = Form("/")):
+    key = f"{request.client.host if request.client else '?'}|{username}"
+    if (wait := auth.login_blocked(key)):
+        return back("/login", f"尝试次数过多，请 {wait // 60 + 1} 分钟后再试")
     u = s.query(User).filter_by(username=username).first()
     if not u or not auth.verify_password(password, u.password_hash):
+        auth.record_fail(key)
         return back("/login", "用户名或密码错误")
-    resp = RedirectResponse(next or "/", status_code=303)
-    resp.set_cookie(auth.COOKIE, auth.make_session_cookie(u), httponly=True, max_age=auth.MAX_AGE)
+    auth.clear_fails(key)
+    resp = RedirectResponse(auth.safe_next(next), status_code=303)
+    auth.set_session_cookie(resp, u)
     return resp
 
 
 @app.get("/logout")
 def logout():
     resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie(auth.COOKIE)
+    resp.delete_cookie(auth.COOKIE, path="/")
     return resp
 
 
@@ -111,7 +123,9 @@ def change_password(request: Request, s: Session = Depends(db), sess=Depends(ANY
         return back("/account", "新密码至少 6 位")
     u.password_hash = auth.hash_password(new)
     s.commit()
-    return back("/account", "密码已修改")
+    resp = back("/account", "密码已修改")
+    auth.set_session_cookie(resp, u)  # 换新会话，旧 Cookie 作废
+    return resp
 
 
 # ---------- 专家 ----------
@@ -357,6 +371,9 @@ async def import_post(s: Session = Depends(db), sess=Depends(ADMIN), file: Uploa
 @app.get("/export")
 def export(s: Session = Depends(db), sess=Depends(ADMIN)):
     data = importer.export_excel(s)
+    history.log(s, sess["name"], "export", None, {}, f"导出全部 {live(s.query(Expert)).count()} 位专家",
+                expert_id=None, expert_name="（全库）")
+    s.commit()
     fn = quote(f"专家库导出_{datetime.now():%Y%m%d}.xlsx")
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fn}"})

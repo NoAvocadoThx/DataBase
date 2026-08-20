@@ -1,6 +1,9 @@
 """端到端验收：按 docs/superpowers/specs 中的 7 条标准。"""
 import io, os, re, sys
 
+os.environ.setdefault("ALLOW_INSECURE_SECRET", "1")
+os.environ.setdefault("SECURE_COOKIE", "0")
+
 import openpyxl, pytest
 
 ROOT = os.path.dirname(os.path.dirname(__file__))

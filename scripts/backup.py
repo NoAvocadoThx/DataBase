@@ -10,6 +10,11 @@ OUT = os.path.join(os.getenv("BACKUP_DIR", os.path.join(ROOT, "backups")), datet
 KEEP_DAYS = 30
 
 os.makedirs(OUT, exist_ok=True)
+try:
+    os.chmod(os.path.dirname(OUT), 0o700)  # 备份含全部机密名单，仅属主可读
+    os.chmod(OUT, 0o700)
+except OSError:
+    pass
 # 用 sqlite 在线备份 API，运行中也安全
 src = sqlite3.connect(DB)
 dst = sqlite3.connect(os.path.join(OUT, "experts.db"))

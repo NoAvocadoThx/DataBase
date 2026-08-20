@@ -3,9 +3,9 @@ services:
     build: .
     restart: always
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # 只绑本机，公网访问一律经 Caddy 反代 + HTTPS
     environment:
-      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      SECRET_KEY: ${SECRET_KEY:?请先在 .env 中设置 SECRET_KEY=$(openssl rand -hex 32)}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_URL: ${LLM_URL:-https://api.deepseek.com/chat/completions}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}

@@ -12,7 +12,7 @@ LABELS = {"name": "姓名", "org": "单位", "title": "职务", "field": "研究
           "wechat": "微信", "bio": "简介", "note": "备注", "source": "来源", "source_text": "原文", "tags": "标签"}
 ACTIONS = {"create": "新建", "update": "修改", "delete": "删除", "restore": "恢复", "purge": "彻底删除",
            "merge": "合并", "import": "Excel导入", "approve": "审核入库", "meeting_add": "添加合作记录",
-           "meeting_del": "删除合作记录"}
+           "meeting_del": "删除合作记录", "export": "导出全库"}
 
 
 class ChangeLog(Base):
