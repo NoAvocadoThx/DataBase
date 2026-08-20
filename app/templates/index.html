@@ -10,12 +10,17 @@
 <div><label>合作记录</label><select name="meeting" style="width:100%"><option value="">不限</option><option value="yes" {% if f.meeting=='yes' %}selected{% endif %}>有合作</option><option value="no" {% if f.meeting=='no' %}selected{% endif %}>无合作</option></select></div>
 <div><label>排序</label><select name="sort" style="width:100%">
 <option value="updated" {% if f.sort=='updated' %}selected{% endif %}>最近更新</option><option value="created" {% if f.sort=='created' %}selected{% endif %}>最近新增</option>
-<option value="name" {% if f.sort=='name' %}selected{% endif %}>姓名</option><option value="org" {% if f.sort=='org' %}selected{% endif %}>单位</option></select></div>
+{% for k, v in [('name','姓名'),('org','单位'),('title','职务'),('field','研究方向'),('tags','标签'),('phone','手机'),('meetings','合作次数')] %}<option value="{{k}}" {% if f.sort==k %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
+<input type="hidden" name="dir" value="{{f.dir}}"></div>
 <div style="display:flex;gap:6px"><button>筛选</button><a class="btn ghost" href="/">清除</a></div>
 </form>
 <div style="display:flex;align-items:center;margin-top:10px"><span class="muted">库中 {{total}} 位 · 符合条件 {{found}} 位</span>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new" style="margin-left:auto">+ 新增专家</a>{% endif %}</div></div>
-<div class="card"><table><tr><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>标签</th><th>手机</th><th>合作</th></tr>
+{% macro th(key, label) -%}
+{% set active = f.sort == key %}{% set nd = 'asc' if (active and f.dir == 'desc') or (not active and key != 'meetings') else 'desc' %}
+<th><a href="?{{filters|urlencode}}&sort={{key}}&dir={{nd}}" style="color:inherit;text-decoration:none" title="点击排序">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span style="color:#bbb">⇅</span>{% endif %}</a></th>
+{%- endmacro %}
+<div class="card"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('phone','手机')}}{{th('meetings','合作')}}</tr>
 {% for e in experts %}<tr><td><a href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
 <td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td><td>{{e.phone}}</td><td>{{e.meetings|length}} 次</td></tr>
 {% else %}<tr><td colspan="7" class="muted">暂无数据</td></tr>{% endfor %}</table>

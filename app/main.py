@@ -97,8 +97,22 @@ def change_password(request: Request, s: Session = Depends(db), sess=Depends(ANY
 
 # ---------- 专家 ----------
 PAGE_SIZE = 50
-SORTS = {"updated": Expert.updated_at.desc(), "name": Expert.name.asc(), "org": Expert.org.asc(),
-         "created": Expert.created_at.desc()}
+
+
+def sort_expr(s: Session, key: str):
+    """列排序表达式。tags=首个标签名，meetings=合作次数。"""
+    from sqlalchemy import func, select
+    from .models import expert_tag
+    if key == "tags":
+        return (select(func.min(Tag.name)).select_from(expert_tag).join(Tag, Tag.id == expert_tag.c.tag_id)
+                .where(expert_tag.c.expert_id == Expert.id).scalar_subquery())
+    if key == "meetings":
+        return select(func.count(Participation.id)).where(Participation.expert_id == Expert.id).scalar_subquery()
+    return {"name": Expert.name, "org": Expert.org, "title": Expert.title, "field": Expert.field,
+            "phone": Expert.phone, "created": Expert.created_at}.get(key, Expert.updated_at)
+
+
+SORT_DEFAULT_DIR = {"updated": "desc", "created": "desc", "meetings": "desc"}
 
 
 def paginate(query, page: int, size: int = PAGE_SIZE):
@@ -111,7 +125,7 @@ def paginate(query, page: int, size: int = PAGE_SIZE):
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = "", tag: str = "",
           org: str = "", title: str = "", field: str = "", meeting: str = "", sort: str = "updated",
-          page: int = 1, msg: str = ""):
+          dir: str = "", page: int = 1, msg: str = ""):
     query = live(s.query(Expert))
     for kw in q.split():  # 多个关键词 = AND，每个词匹配任一字段
         like = f"%{kw}%"
@@ -129,14 +143,17 @@ def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str 
         query = query.filter(Expert.meetings.any())
     elif meeting == "no":
         query = query.filter(~Expert.meetings.any())
-    query = query.order_by(SORTS.get(sort, SORTS["updated"]), Expert.id.desc())
+    dir = dir if dir in ("asc", "desc") else SORT_DEFAULT_DIR.get(sort, "asc")
+    expr = sort_expr(s, sort)
+    query = query.order_by(expr.desc().nullslast() if dir == "desc" else expr.asc().nullsfirst(), Expert.id.desc())
     experts, found, page, pages = paginate(query, page)
     pend = s.query(DuplicateCandidate).filter_by(status="pending").count()
     trash = s.query(Expert).filter(Expert.deleted_at.isnot(None)).count()
     docs = s.query(Document).filter_by(status="pending").count()
-    params = {k: v for k, v in dict(q=q, tag=tag, org=org, title=title, field=field, meeting=meeting, sort=sort).items() if v}
+    params = {k: v for k, v in dict(q=q, tag=tag, org=org, title=title, field=field, meeting=meeting, sort=sort, dir=dir).items() if v}
+    filters = {k: v for k, v in params.items() if k not in ("sort", "dir")}
     return render("index.html", request, msg=msg, f=dict(q=q, tag=tag, org=org, title=title, field=field,
-                  meeting=meeting, sort=sort), params=params,
+                  meeting=meeting, sort=sort, dir=dir), params=params, filters=filters,
                   experts=[view(e, sess["role"]) for e in experts], found=found, page=page, pages=pages,
                   tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count(),
                   pending_dup=pend, pending_docs=docs, trash=trash)

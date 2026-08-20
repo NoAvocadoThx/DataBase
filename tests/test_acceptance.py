@@ -223,3 +223,19 @@ def test_9_list_filters_pagination_history_filters(client):
     assert "符合条件 0 条" in h
     h = page(client, "/history?action=import")
     assert "第 1/" in h  # 分页出现
+
+
+def test_10_column_sort(client):
+    login(client, "admin", "admin123")
+    def names(url):
+        return re.findall(r'<td><a href="/expert/\d+">([^<]+)</a>', page(client, url))
+    asc = names("/?q=压测&sort=name&dir=asc"); desc = names("/?q=压测&sort=name&dir=desc")
+    assert asc == sorted(asc) and desc == sorted(desc, reverse=True) and asc[0] != desc[0]
+    h = page(client, "/?q=压测&sort=org&dir=asc")
+    assert "单位 ▲" in h and 'sort=org&dir=desc' in h  # 再点反向
+    rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=desc"))
+    assert rows == sorted(rows, key=int, reverse=True) and int(rows[0]) >= 1
+    rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=asc"))
+    assert rows[0] == "0"
+    tags_first = re.findall(r'<td>(?:<a class="tag"[^>]*>([^<]*)</a>)', page(client, "/?sort=tags&dir=asc&meeting=yes"))
+    assert tags_first == sorted(tags_first)
