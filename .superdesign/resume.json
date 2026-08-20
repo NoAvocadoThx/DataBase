@@ -1,0 +1,41 @@
+{
+  "projectId": "c3b9c86c-d108-40fc-af01-b244633db54f",
+  "canvas": "https://superdesign.dev/teams/5b4c2a6d-6b81-4219-a8ed-6b52306d90b9/projects/c3b9c86c-d108-40fc-af01-b244633db54f",
+  "targets": {
+    "/": {
+      "title": "专家列表",
+      "baselineDraftId": "2173bda6-4f51-4a18-a4de-6f9d7b1eee65",
+      "activeDraftId": "c6267f65-1a30-4932-806b-4b5b7d1cff24",
+      "branches": {
+        "c6267f65-1a30-4932-806b-4b5b7d1cff24": "方向A 数据面板",
+        "d6eab452-2274-45cf-8d38-3c8391ac6885": "方向B 名录"
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "app/templates/base.html",
+        "app/templates/index.html",
+        "app/templates/_pager.html"
+      ],
+      "components": [],
+      "selectedDirection": "方向A 数据面板"
+    },
+    "/expert/{id}": {
+      "title": "专家详情",
+      "activeDraftId": "611d04a9-ecff-4efa-a0db-2aa5e266c055",
+      "sourceDraftId": "c6267f65-1a30-4932-806b-4b5b7d1cff24",
+      "direction": "方向A 数据面板"
+    },
+    "/ask": {
+      "title": "找专家",
+      "activeDraftId": "6eff0451-661b-4cc1-be5d-a43700182043",
+      "sourceDraftId": "c6267f65-1a30-4932-806b-4b5b7d1cff24",
+      "direction": "方向A 数据面板"
+    },
+    "/documents/{id}": {
+      "title": "资料审核",
+      "activeDraftId": "d124daa5-1b97-4a96-85fa-6adfd2e9bed5",
+      "sourceDraftId": "c6267f65-1a30-4932-806b-4b5b7d1cff24",
+      "direction": "方向A 数据面板"
+    }
+  }
+}
