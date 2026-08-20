@@ -192,3 +192,34 @@ def test_8_history_and_trash(client):
     client.post("/users", data={"username": "tom2", "password": "tom123456", "role": "intern"})
     login(client, "tom2", "tom123456")
     assert client.get("/history").status_code == 403 and client.get("/trash").status_code == 403
+
+
+def test_9_list_filters_pagination_history_filters(client):
+    login(client, "admin", "admin123")
+    # 造 120 位专家，验证分页
+    import openpyxl, io as _io
+    wb = openpyxl.Workbook(); ws = wb.active
+    ws.append(["姓名", "单位", "职务", "研究方向", "手机", "邮箱", "微信", "简介", "标签", "备注"])
+    for i in range(120):
+        ws.append([f"压测{i:03d}", "压测医院" if i % 2 else "压测大学", "教授" if i % 3 else "研究员",
+                   "ADC" if i % 4 else "疫苗", "", "", "", "", "压测,偶数" if i % 2 == 0 else "压测", ""])
+    b = _io.BytesIO(); wb.save(b)
+    client.post("/import", files={"file": ("p.xlsx", b.getvalue())})
+    h = page(client, "/?q=压测")
+    assert "符合条件 120 位" in h and "第 1/3 页" in h and h.count("<td><a href=\"/expert/") == 50
+    h = page(client, "/?q=压测&page=3")
+    assert h.count("<td><a href=\"/expert/") == 20
+    h = page(client, "/?q=压测&org=大学&title=教授&field=ADC&tag=压测,偶数&meeting=no&sort=name")
+    n = int(re.search(r"符合条件 (\d+) 位", h).group(1))
+    assert 0 < n < 60 and "压测大学" in h and "压测医院" not in h
+    assert "符合条件 0 位" in page(client, "/?q=压测 不存在的词")
+    # 多关键词 AND
+    assert "符合条件 60 位" in page(client, "/?q=压测 医院")
+    # 操作历史筛选
+    h = page(client, "/history?action=import&name=压测001")
+    assert "符合条件 1 条" in h and "Excel导入" in h
+    assert "符合条件 0 条" in page(client, "/history?actor=nobody")
+    h = page(client, "/history?date_from=2000-01-01&date_to=2000-01-02")
+    assert "符合条件 0 条" in h
+    h = page(client, "/history?action=import")
+    assert "第 1/" in h  # 分页出现

@@ -67,7 +67,7 @@ class Tag(Base):
 class Participation(Base):
     __tablename__ = "participation"
     id = Column(Integer, primary_key=True)
-    expert_id = Column(ForeignKey("expert.id"), nullable=False)
+    expert_id = Column(ForeignKey("expert.id"), nullable=False, index=True)
     meeting = Column(String(128), nullable=False)
     year = Column(Integer)
     role = Column(String(64), default="")
@@ -131,3 +131,7 @@ def _migrate(eng):
                 if col.name not in existing:
                     ctype = col.type.compile(eng.dialect)
                     conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ctype}'))
+            have_idx = {i["name"] for i in insp.get_indexes(table.name)}
+            for idx in table.indexes:
+                if idx.name not in have_idx:
+                    idx.create(conn)

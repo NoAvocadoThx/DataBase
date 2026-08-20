@@ -22,7 +22,7 @@ def test_import_dedup_and_duplicate_candidates(s):
     assert r["created"] == 0 and r["updated"] == 3 and s.query(Expert).count() == 3
     from app import history
     logs = history.recent(s)
-    assert len(logs) == 3 and all(c.action == "create" for c in logs)  # 无变化的更新不记录
+    assert len(logs) == 3 and all(c.action == "import" for c in logs)  # 无变化的更新不记录
 
 
 def test_history_diff(s):
@@ -46,7 +46,7 @@ def test_merge(s):
     assert live(s.query(Expert)).count() == 1 and s.query(Expert).count() == 2  # 被合并方进回收站
     assert b.deleted_at is not None and b.deleted_by == "tester"
     acts = [c.action for c in history.for_expert(s, keep.id)]
-    assert "merge" in acts and "create" in acts
+    assert "merge" in acts and "import" in acts
     importer.restore(s, b, "tester"); s.commit()
     assert live(s.query(Expert)).count() == 2 and s.query(DuplicateCandidate).filter_by(status="pending").count() == 1
     importer.purge(s, b, "tester"); s.commit()

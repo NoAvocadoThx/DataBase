@@ -3,14 +3,14 @@
 <td class="muted" style="white-space:nowrap">{{c.created_at.strftime('%Y-%m-%d %H:%M')}}</td>
 <td>{{c.actor}}</td>
 {% if show_expert %}<td><a href="/expert/{{c.expert_id}}">{{c.expert_name}}</a></td>{% endif %}
-<td><span class="tag" style="background:{% if c.action in ['delete','purge'] %}#fee2e2;color:#991b1b{% elif c.action in ['create','restore'] %}#dcfce7;color:#166534{% else %}#e0ecff;color:#1d4ed8{% endif %}">{{c.action_label}}</span></td>
+<td><span class="tag" style="background:{% if c.action in ['delete','purge'] %}#fee2e2;color:#991b1b{% elif c.action in ['create','restore'] or (c.action in ['import','approve'] and not c.is_diff) %}#dcfce7;color:#166534{% else %}#e0ecff;color:#1d4ed8{% endif %}">{{c.action_label}}</span></td>
 <td>{% if c.summary %}<div class="muted">{{c.summary}}</div>{% endif %}
 {% set d = c.diff %}
-{% if c.action in ['update','import','approve','merge'] and d %}
-  {% for k, v in d.items() %}<div><b>{{labels.get(k, k)}}</b>：<span style="color:#991b1b;text-decoration:line-through">{{v[0] or '（空）'}}</span> → <span style="color:#166534">{{v[1] or '（空）'}}</span></div>{% endfor %}
-{% elif c.action in ['meeting_add','meeting_del'] %}
+{% if c.action in ['meeting_add','meeting_del'] %}
   <div>{{d['会议']}}{% if d['年份'] %} {{d['年份']}}{% endif %}{% if d['角色'] %} · {{d['角色']}}{% endif %}{% if d['主题'] %} · {{d['主题']}}{% endif %}</div>
-{% elif c.action in ['create','delete','purge'] and d %}
+{% elif c.is_diff %}
+  {% for k, v in d.items() %}<div><b>{{labels.get(k, k)}}</b>：<span style="color:#991b1b;text-decoration:line-through">{{v[0] or '（空）'}}</span> → <span style="color:#166534">{{v[1] or '（空）'}}</span></div>{% endfor %}
+{% elif d %}
   <details><summary class="muted">当时的完整数据</summary>{% for k, v in d.items() %}{% if v %}<div><b>{{labels.get(k, k)}}</b>：{{v}}</div>{% endif %}{% endfor %}</details>
 {% endif %}</td></tr>
 {% else %}<tr><td colspan="{{ 5 if show_expert else 4 }}" class="muted">暂无记录</td></tr>{% endfor %}

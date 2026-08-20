@@ -1,5 +1,14 @@
 {% extends "base.html" %}{% block body %}
-<div class="card"><h3>操作历史 <span class="muted">（最近 {{logs|length}} 条）</span></h3>
-<table><tr><th>时间</th><th>操作人</th><th>专家</th><th>操作</th><th>内容</th></tr>
-{% with show_expert=true %}{% include "_log_rows.html" %}{% endwith %}</table></div>
+<div class="card"><h3 style="margin-top:0">操作历史</h3>
+<form style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end">
+<div><label>操作人</label><select name="actor" style="width:100%"><option value="">全部</option>{% for a in actors %}<option {% if a==f.actor %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
+<div><label>操作类型</label><select name="action" style="width:100%"><option value="">全部</option>{% for k, v in actions.items() %}<option value="{{k}}" {% if k==f.action %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
+<div><label>专家姓名</label><input name="name" value="{{f.name}}" style="width:100%"></div>
+<div><label>开始日期</label><input name="date_from" type="date" value="{{f.date_from}}" style="width:100%"></div>
+<div><label>结束日期</label><input name="date_to" type="date" value="{{f.date_to}}" style="width:100%"></div>
+<div style="display:flex;gap:6px"><button>筛选</button><a class="btn ghost" href="/history">清除</a></div></form>
+<p class="muted" style="margin-bottom:0">符合条件 {{found}} 条</p></div>
+<div class="card"><table><tr><th>时间</th><th>操作人</th><th>专家</th><th>操作</th><th>内容</th></tr>
+{% with show_expert=true %}{% include "_log_rows.html" %}{% endwith %}</table>
+{% include "_pager.html" %}</div>
 {% endblock %}

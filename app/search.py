@@ -5,17 +5,34 @@ import httpx
 from sqlalchemy.orm import Session
 
 from . import extract as ex
-from .models import Expert, Tag, live
+from .models import Expert, Participation, Tag, live
 
 STOP = set("的 和 与 及 或 找 请 帮我 帮 我 一下 专家 老师 推荐 几位 几个 做 从事 研究 方向 领域 有 没有 过 参加 参与 我们 会议 的人".split())
+
+
+PREFIX = ("帮我找", "帮我", "请找", "找做", "找", "做", "从事", "研究", "推荐", "寻找", "有没有", "需要", "想要", "要")
+SUFFIX = ("的专家", "专家", "老师", "教授", "方向的", "方向", "领域的", "领域", "相关的", "相关", "的人", "的")
+
+
+def _clean(p: str) -> str:
+    changed = True
+    while changed and p:
+        changed = False
+        for w in sorted(PREFIX, key=len, reverse=True):
+            if p.startswith(w) and len(p) > len(w):
+                p, changed = p[len(w):], True
+        for w in sorted(SUFFIX, key=len, reverse=True):
+            if p.endswith(w) and len(p) > len(w):
+                p, changed = p[:-len(w)], True
+    return p
 
 
 def _keywords(q: str) -> list[str]:
     parts = re.split(r"[\s，,。、；;？?！!的和与及]+", q)
     out = []
     for p in parts:
-        p = p.strip()
-        if len(p) >= 2 and p not in STOP:
+        p = _clean(p.strip())
+        if len(p) >= 2 and p not in STOP and p not in out:
             out.append(p)
     # 英文缩写单独拿出来 (ADC / CAR-T / PD-1)
     out += [w for w in re.findall(r"[A-Za-z][A-Za-z0-9-]{1,}", q) if w not in out]
@@ -76,14 +93,41 @@ def score(e: Expert, parsed: dict) -> tuple[int, list[str]]:
     return pts, reasons
 
 
-def search(s: Session, parsed: dict) -> list[tuple[Expert, int, list[str]]]:
+def candidates(s: Session, parsed: dict):
+    """先在数据库里用 LIKE / 标签 / 单位 缩小候选集（任一条件命中即为候选），再到 Python 打分。"""
+    from sqlalchemy import or_
+    from sqlalchemy.orm import selectinload
+    conds = []
+    for k in parsed.get("keywords", []):
+        if k:
+            like = f"%{k}%"
+            topic_ids = s.query(Participation.expert_id).filter(Participation.topic.like(like))
+            conds += [Expert.field.like(like), Expert.bio.like(like), Expert.title.like(like),
+                      Expert.id.in_(topic_ids)]
+    if parsed.get("tags"):
+        from .models import expert_tag
+        tag_ids = s.query(expert_tag.c.expert_id).join(Tag, Tag.id == expert_tag.c.tag_id).filter(Tag.name.in_(parsed["tags"]))
+        conds.append(Expert.id.in_(tag_ids))
+    if parsed.get("org"):
+        conds.append(Expert.org.like(f"%{parsed['org']}%"))
+    q = live(s.query(Expert)).options(selectinload(Expert.tags), selectinload(Expert.meetings))
+    if conds:
+        q = q.filter(or_(*conds))
+    elif parsed.get("need_meeting"):
+        q = q.filter(Expert.id.in_(s.query(Participation.expert_id)))
+    else:
+        return []
+    return q.all()
+
+
+def search(s: Session, parsed: dict, limit: int = 50) -> list[tuple[Expert, int, list[str]]]:
     out = []
-    for e in live(s.query(Expert)).all():
+    for e in candidates(s, parsed):
         pts, reasons = score(e, parsed)
         if reasons and pts > 0:
             out.append((e, pts, reasons))
     out.sort(key=lambda x: (-x[1], x[0].name))
-    return out
+    return out[:limit]
 
 
 def all_tag_names(s: Session) -> list[str]:

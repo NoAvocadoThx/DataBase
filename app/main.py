@@ -96,24 +96,48 @@ def change_password(request: Request, s: Session = Depends(db), sess=Depends(ANY
 
 
 # ---------- 专家 ----------
+PAGE_SIZE = 50
+SORTS = {"updated": Expert.updated_at.desc(), "name": Expert.name.asc(), "org": Expert.org.asc(),
+         "created": Expert.created_at.desc()}
+
+
+def paginate(query, page: int, size: int = PAGE_SIZE):
+    total = query.order_by(None).count()
+    pages = max(1, -(-total // size))
+    page = min(max(1, page), pages)
+    return query.offset((page - 1) * size).limit(size).all(), total, page, pages
+
+
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, s: Session = Depends(db), sess=Depends(ANY),
-          q: str = "", tag: str = "", org: str = "", msg: str = ""):
+def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = "", tag: str = "",
+          org: str = "", title: str = "", field: str = "", meeting: str = "", sort: str = "updated",
+          page: int = 1, msg: str = ""):
     query = live(s.query(Expert))
-    if q:
-        like = f"%{q}%"
+    for kw in q.split():  # 多个关键词 = AND，每个词匹配任一字段
+        like = f"%{kw}%"
         query = query.filter(or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
                                  Expert.field.like(like), Expert.bio.like(like)))
     if org:
         query = query.filter(Expert.org.like(f"%{org}%"))
-    if tag:
-        query = query.filter(Expert.tags.any(Tag.name == tag))
-    experts = query.order_by(Expert.updated_at.desc()).all()
+    if title:
+        query = query.filter(Expert.title.like(f"%{title}%"))
+    if field:
+        query = query.filter(Expert.field.like(f"%{field}%"))
+    for tname in [x for x in importer.split_tags(tag) if x]:  # 多标签 = AND
+        query = query.filter(Expert.tags.any(Tag.name == tname))
+    if meeting == "yes":
+        query = query.filter(Expert.meetings.any())
+    elif meeting == "no":
+        query = query.filter(~Expert.meetings.any())
+    query = query.order_by(SORTS.get(sort, SORTS["updated"]), Expert.id.desc())
+    experts, found, page, pages = paginate(query, page)
     pend = s.query(DuplicateCandidate).filter_by(status="pending").count()
     trash = s.query(Expert).filter(Expert.deleted_at.isnot(None)).count()
     docs = s.query(Document).filter_by(status="pending").count()
-    return render("index.html", request, q=q, tag=tag, org=org, msg=msg,
-                  experts=[view(e, sess["role"]) for e in experts],
+    params = {k: v for k, v in dict(q=q, tag=tag, org=org, title=title, field=field, meeting=meeting, sort=sort).items() if v}
+    return render("index.html", request, msg=msg, f=dict(q=q, tag=tag, org=org, title=title, field=field,
+                  meeting=meeting, sort=sort), params=params,
+                  experts=[view(e, sess["role"]) for e in experts], found=found, page=page, pages=pages,
                   tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count(),
                   pending_dup=pend, pending_docs=docs, trash=trash)
 
@@ -201,8 +225,14 @@ def expert_purge(eid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
 
 
 @app.get("/history", response_class=HTMLResponse)
-def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR)):
-    return render("history.html", request, logs=history.recent(s), labels=history.LABELS)
+def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), actor: str = "",
+                 action: str = "", name: str = "", date_from: str = "", date_to: str = "", page: int = 1):
+    query = history.filtered(s, actor=actor, action=action, name=name, date_from=date_from, date_to=date_to)
+    logs, found, page, pages = paginate(query, page)
+    params = {k: v for k, v in dict(actor=actor, action=action, name=name, date_from=date_from, date_to=date_to).items() if v}
+    return render("history.html", request, logs=logs, labels=history.LABELS, actions=history.ACTIONS,
+                  actors=history.actors(s), f=dict(actor=actor, action=action, name=name, date_from=date_from,
+                  date_to=date_to), params=params, found=found, page=page, pages=pages)
 
 
 @app.post("/expert/{eid}/meeting")
@@ -357,7 +387,7 @@ def ask(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = 
     parsed, results = None, []
     if q.strip():
         parsed = search.parse_query(q, search.all_tag_names(s))
-        results = [(view(e, sess["role"]), pts, reasons) for e, pts, reasons in search.search(s, parsed)]
+        results = [(view(e, sess["role"]), pts, reasons) for e, pts, reasons in search.search(s, parsed, limit=50)]
     return render("ask.html", request, q=q, parsed=parsed, results=results, llm_on=extract.llm_enabled())
 
 

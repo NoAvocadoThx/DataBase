@@ -1,6 +1,6 @@
 """修改历史：记录谁在何时对哪位专家做了什么，修改类记录保存字段级 旧值→新值。"""
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Session
@@ -20,8 +20,8 @@ class ChangeLog(Base):
     id = Column(Integer, primary_key=True)
     expert_id = Column(Integer, index=True)                 # 不设外键：专家彻底删除后历史仍保留
     expert_name = Column(String(64), default="")
-    action = Column(String(16), nullable=False)
-    actor = Column(String(64), default="")
+    action = Column(String(16), nullable=False, index=True)
+    actor = Column(String(64), default="", index=True)
     diff_json = Column(Text, default="{}")                  # {"字段": [旧, 新]} 或任意上下文
     summary = Column(String(256), default="")
     created_at = Column(DateTime, default=datetime.now, index=True)
@@ -32,6 +32,12 @@ class ChangeLog(Base):
             return json.loads(self.diff_json or "{}")
         except ValueError:
             return {}
+
+    @property
+    def is_diff(self) -> bool:
+        """diff 是否为 {字段: [旧, 新]} 形式（否则是完整快照或上下文）。"""
+        d = self.diff
+        return bool(d) and all(isinstance(v, list) and len(v) == 2 for v in d.values())
 
     @property
     def action_label(self) -> str:
@@ -67,6 +73,32 @@ def log_update(s: Session, actor: str, e: Expert, before: dict, action: str = "u
 def for_expert(s: Session, expert_id: int, limit: int = 100) -> list[ChangeLog]:
     return (s.query(ChangeLog).filter_by(expert_id=expert_id)
             .order_by(ChangeLog.created_at.desc(), ChangeLog.id.desc()).limit(limit).all())
+
+
+def filtered(s: Session, actor: str = "", action: str = "", name: str = "", date_from: str = "", date_to: str = ""):
+    """返回带筛选条件的 Query（未执行），供分页。"""
+    q = s.query(ChangeLog)
+    if actor:
+        q = q.filter(ChangeLog.actor == actor)
+    if action:
+        q = q.filter(ChangeLog.action == action)
+    if name:
+        q = q.filter(ChangeLog.expert_name.like(f"%{name}%"))
+    if date_from:
+        try:
+            q = q.filter(ChangeLog.created_at >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(ChangeLog.created_at < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            pass
+    return q.order_by(ChangeLog.created_at.desc(), ChangeLog.id.desc())
+
+
+def actors(s: Session) -> list[str]:
+    return [a for (a,) in s.query(ChangeLog.actor).distinct().order_by(ChangeLog.actor) if a]
 
 
 def recent(s: Session, limit: int = 200) -> list[ChangeLog]:

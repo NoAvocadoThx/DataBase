@@ -62,7 +62,7 @@ def upsert_expert(s: Session, data: dict, source: str, actor: str = "", action: 
         e.tags = [get_or_create_tag(s, t) for t in data["tags"]]
     if created:
         register_duplicates(s, e)
-        history.log(s, actor, "create", e, history.snapshot(e), f"来源: {source}")
+        history.log(s, actor, action, e, history.snapshot(e), f"新建，来源: {source}")
     else:
         history.log_update(s, actor, e, before, action, f"来源: {source}")
     return e, created
