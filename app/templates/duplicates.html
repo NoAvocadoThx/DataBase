@@ -1,12 +1,12 @@
 {% extends "base.html" %}{% block body %}
-<div class="card"><h3>疑似重复专家（{{items|length}}）</h3>
-{% for d in items %}<div class="card" style="background:#fafafa"><table><tr><th></th><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>标签</th><th>合作</th><th>来源</th></tr>
-{% for e in [d.expert_a, d.expert_b] %}<tr><td>{{ 'A' if loop.first else 'B' }}</td><td><a href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td><td>{{e.field}}</td>
+<h2>疑似重复 <span class="muted" style="font-weight:400">{{items|length}} 组</span></h2>
+{% for d in items %}<div class="card"><table><tr><th style="width:30px"></th><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>标签</th><th>合作</th><th>来源</th></tr>
+{% for e in [d.expert_a, d.expert_b] %}<tr><td><b>{{ 'A' if loop.first else 'B' }}</b></td><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td><td>{{e.field}}</td>
 <td>{% for t in e.tags %}<span class="tag">{{t.name}}</span>{% endfor %}</td><td>{{e.meetings|length}}</td><td class="muted">{{e.source}}</td></tr>{% endfor %}</table>
-<div style="margin-top:8px;display:flex;gap:8px">
+<div class="row" style="margin-top:12px">
 <form method="post" action="/duplicates/{{d.id}}/merge"><input type="hidden" name="keep" value="{{d.expert_a.id}}"><button>同一人，保留 A</button></form>
 <form method="post" action="/duplicates/{{d.id}}/merge"><input type="hidden" name="keep" value="{{d.expert_b.id}}"><button>同一人，保留 B</button></form>
-<form method="post" action="/duplicates/{{d.id}}/distinct"><button class="ghost">不同人</button></form></div>
-<p class="muted">合并：保留方的空字段由另一方补齐，标签取并集，合作历史全部迁移。</p></div>
-{% else %}<p class="muted">没有待处理的疑似重复</p>{% endfor %}</div>
+<form method="post" action="/duplicates/{{d.id}}/distinct"><button class="ghost">不同人</button></form>
+<span class="muted">合并：保留方的空字段由另一方补齐，标签取并集，合作历史全部迁移，另一方进回收站。</span></div></div>
+{% else %}<div class="card muted" style="text-align:center;padding:32px">没有待处理的疑似重复</div>{% endfor %}
 {% endblock %}

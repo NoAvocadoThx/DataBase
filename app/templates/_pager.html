@@ -1,12 +1,12 @@
 {# 分页条。变量 page, pages, found, params(dict) #}
 {% if pages > 1 %}{% set qs = params|urlencode %}
-<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+<div class="row" style="justify-content:flex-end;margin-top:10px">
 <span class="muted">共 {{found}} 条 · 第 {{page}}/{{pages}} 页</span>
 {% if page > 1 %}<a class="btn ghost" href="?{{qs}}&page=1">首页</a><a class="btn ghost" href="?{{qs}}&page={{page-1}}">上一页</a>{% endif %}
 {% for p in range([1, page-3]|max, [pages, page+3]|min + 1) %}
   {% if p == page %}<span class="btn">{{p}}</span>{% else %}<a class="btn ghost" href="?{{qs}}&page={{p}}">{{p}}</a>{% endif %}
 {% endfor %}
 {% if page < pages %}<a class="btn ghost" href="?{{qs}}&page={{page+1}}">下一页</a><a class="btn ghost" href="?{{qs}}&page={{pages}}">末页</a>{% endif %}
-<form style="display:inline">{% for k, v in params.items() %}<input type="hidden" name="{{k}}" value="{{v}}">{% endfor %}
-<input name="page" type="number" min="1" max="{{pages}}" value="{{page}}" style="width:64px"> <button class="ghost">跳转</button></form>
+<form class="row" style="gap:4px">{% for k, v in params.items() %}<input type="hidden" name="{{k}}" value="{{v}}">{% endfor %}
+<input name="page" type="number" min="1" max="{{pages}}" value="{{page}}" style="width:64px" aria-label="页码"><button class="ghost">跳转</button></form>
 </div>{% endif %}

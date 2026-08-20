@@ -1,17 +1,17 @@
 {% extends "base.html" %}{% block body %}
-<div class="card"><h2>{{ '编辑' if e else '新增' }}专家</h2>
-<form method="post" action="/expert/save" class="grid"><input type="hidden" name="eid" value="{{e.id if e else ''}}">
-<div><label>姓名 *</label><input name="name" value="{{e.name if e else ''}}" required style="width:100%"></div>
-<div><label>单位</label><input name="org" value="{{e.org if e else ''}}" style="width:100%"></div>
-<div><label>职务/职称</label><input name="title" value="{{e.title if e else ''}}" style="width:100%"></div>
-<div><label>研究方向</label><input name="field" value="{{e.field if e else ''}}" style="width:100%"></div>
-<div><label>手机</label><input name="phone" value="{{e.phone if e else ''}}" style="width:100%"></div>
-<div><label>邮箱</label><input name="email" value="{{e.email if e else ''}}" style="width:100%"></div>
-<div><label>微信</label><input name="wechat" value="{{e.wechat if e else ''}}" style="width:100%"></div>
-<div><label>标签（逗号分隔）</label><input name="tags" value="{{e.tags|map(attribute='name')|join(', ') if e else ''}}" style="width:100%" list="taglist">
+<h2>{{ '编辑资料' if e else '新增专家' }}{% if e %} <span class="muted" style="font-family:var(--serif)">{{e.name}}</span>{% endif %}</h2>
+<div class="card"><form method="post" action="/expert/save" class="grid"><input type="hidden" name="eid" value="{{e.id if e else ''}}">
+<div><label>姓名 *</label><input name="name" value="{{e.name if e else ''}}" required class="w" autofocus></div>
+<div><label>单位</label><input name="org" value="{{e.org if e else ''}}" class="w"></div>
+<div><label>职务 / 职称</label><input name="title" value="{{e.title if e else ''}}" class="w"></div>
+<div><label>研究方向</label><input name="field" value="{{e.field if e else ''}}" class="w" placeholder="多个用顿号分隔"></div>
+<div><label>手机</label><input name="phone" value="{{e.phone if e else ''}}" class="w mono"></div>
+<div><label>邮箱</label><input name="email" value="{{e.email if e else ''}}" class="w mono"></div>
+<div><label>微信</label><input name="wechat" value="{{e.wechat if e else ''}}" class="w mono"></div>
+<div><label>标签 <span class="muted">逗号分隔</span></label><input name="tags" value="{{e.tags|map(attribute='name')|join(', ') if e else ''}}" class="w" list="taglist">
 <datalist id="taglist">{% for t in all_tags %}<option value="{{t.name}}">{% endfor %}</datalist></div>
 <div class="full"><label>简介</label><textarea name="bio" rows="4">{{e.bio if e else ''}}</textarea></div>
-<div class="full"><label>内部备注（实习生不可见）</label><textarea name="note" rows="2">{{e.note if e else ''}}</textarea></div>
-<div class="full"><button>保存</button> <a class="btn ghost" href="{{ '/expert/' ~ e.id if e else '/' }}">取消</a>
-<span class="muted">已有标签：{% for t in all_tags %}{{t.name}} {% endfor %}</span></div></form></div>
+<div class="full"><label>内部备注 <span class="muted">实习生不可见</span></label><textarea name="note" rows="2">{{e.note if e else ''}}</textarea></div>
+<div class="full row"><button>保存</button><a class="btn ghost" href="{{ '/expert/' ~ e.id if e else '/' }}">取消</a>
+<span class="muted">已有标签：{% for t in all_tags %}<a class="tag" href="#" onclick="var i=this.closest('form').tags;i.value=(i.value?i.value.replace(/[,，\s]+$/,'')+', ':'')+'{{t.name}}';return false">{{t.name}}</a>{% endfor %}</span></div></form></div>
 {% endblock %}

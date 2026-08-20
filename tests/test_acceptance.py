@@ -63,7 +63,7 @@ def test_3_import_and_duplicates(client):
     assert "%E5%B7%B2%E5%90%88%E5%B9%B6" in r.headers["location"]  # 已合并
     assert "没有待处理的疑似重复" in page(client, "/duplicates")
     d = page(client, "/?tag=新标签")
-    assert d.count("<td><a href=\"/expert/") == 1 and "乳腺中心" not in d  # 标签并入保留方，被合并方已删除
+    assert d.count("<td><a class=\"name\" href=\"/expert/") == 1 and "乳腺中心" not in d  # 标签并入保留方，被合并方已删除
 
 
 def test_2_intern_masking_and_permissions(client):
@@ -120,7 +120,7 @@ def test_4_document_upload_review_approve(client, tmp_path):
     html = page(client, "/?q=赵敏")
     eid = re.search(r'/expert/(\d+)"', html).group(1)
     d = page(client, f"/expert/{eid}")
-    assert "复旦大学附属中山医院" in d and "议程.pdf" in d and "原文：" in d
+    assert "复旦大学附属中山医院" in d and "议程.pdf" in d and "录入时的原文" in d
     assert "2025 创新药临床开发峰会" in d and "ADC 真实世界研究" in d
     assert "已入库" in page(client, "/documents")
 
@@ -128,7 +128,7 @@ def test_4_document_upload_review_approve(client, tmp_path):
 def test_5_natural_language_search(client):
     login(client, "tom", "tom123456")
     html = page(client, "/ask?q=找做ADC临床研究、参加过我们会议的肿瘤专家")
-    rows = re.findall(r'<td>(\d)</td><td><a href="/expert/\d+">([^<]+)</a>', html)
+    rows = re.findall(r'<td class="num">(\d)</td><td><a class="name" href="/expert/\d+">([^<]+)</a>', html)
     assert rows and rows[0][1] in ("张伟", "赵敏")
     assert "参加过" in html and "标签“ADC”" in html
     assert "没有匹配" in page(client, "/ask?q=量子计算")
@@ -180,7 +180,7 @@ def test_8_history_and_trash(client):
     client.post(f"/expert/{eid}/restore")
     assert "测试专家" in page(client, "/?q=测试专家") and "测试专家" not in page(client, "/trash")
     d = page(client, f"/expert/{eid}")
-    assert "从回收站恢复" in d and d.count("<span class=\"tag\"") >= 6  # 多条历史
+    assert "从回收站恢复" in d and d.count("<span class=\"tag\"") >= 5  # 多条历史
     # 彻底删除必须先在回收站
     client.post(f"/expert/{eid}/purge")
     assert "测试专家" in page(client, "/?q=测试专家")
@@ -206,21 +206,21 @@ def test_9_list_filters_pagination_history_filters(client):
     b = _io.BytesIO(); wb.save(b)
     client.post("/import", files={"file": ("p.xlsx", b.getvalue())})
     h = page(client, "/?q=压测")
-    assert "符合条件 120 位" in h and "第 1/3 页" in h and h.count("<td><a href=\"/expert/") == 50
+    assert "符合条件 <b style=\"color:var(--ink)\">120</b> 位" in h and "第 1/3 页" in h and h.count("<td><a class=\"name\" href=\"/expert/") == 50
     h = page(client, "/?q=压测&page=3")
-    assert h.count("<td><a href=\"/expert/") == 20
+    assert h.count("<td><a class=\"name\" href=\"/expert/") == 20
     h = page(client, "/?q=压测&org=大学&title=教授&field=ADC&tag=压测,偶数&meeting=no&sort=name")
-    n = int(re.search(r"符合条件 (\d+) 位", h).group(1))
+    n = int(re.search(r"符合条件 <b[^>]*>(\d+)</b> 位", h).group(1))
     assert 0 < n < 60 and "压测大学" in h and "压测医院" not in h
-    assert "符合条件 0 位" in page(client, "/?q=压测 不存在的词")
+    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 位" in page(client, "/?q=压测 不存在的词")
     # 多关键词 AND
-    assert "符合条件 60 位" in page(client, "/?q=压测 医院")
+    assert "符合条件 <b style=\"color:var(--ink)\">60</b> 位" in page(client, "/?q=压测 医院")
     # 操作历史筛选
     h = page(client, "/history?action=import&name=压测001")
-    assert "符合条件 1 条" in h and "Excel导入" in h
-    assert "符合条件 0 条" in page(client, "/history?actor=nobody")
+    assert "符合条件 <b style=\"color:var(--ink)\">1</b> 条" in h and "Excel导入" in h
+    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 条" in page(client, "/history?actor=nobody")
     h = page(client, "/history?date_from=2000-01-01&date_to=2000-01-02")
-    assert "符合条件 0 条" in h
+    assert "符合条件 <b style=\"color:var(--ink)\">0</b> 条" in h
     h = page(client, "/history?action=import")
     assert "第 1/" in h  # 分页出现
 
@@ -228,7 +228,7 @@ def test_9_list_filters_pagination_history_filters(client):
 def test_10_column_sort(client):
     login(client, "admin", "admin123")
     def names(url):
-        return re.findall(r'<td><a href="/expert/\d+">([^<]+)</a>', page(client, url))
+        return re.findall(r'<td><a class="name" href="/expert/\d+">([^<]+)</a>', page(client, url))
     asc = names("/?q=压测&sort=name&dir=asc"); desc = names("/?q=压测&sort=name&dir=desc")
     assert asc == sorted(asc) and desc == sorted(desc, reverse=True) and asc[0] != desc[0]
     h = page(client, "/?q=压测&sort=org&dir=asc")

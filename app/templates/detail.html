@@ -1,22 +1,34 @@
 {% extends "base.html" %}{% block body %}
-{% if deleted %}<div class="msg" style="background:#fee2e2;border-color:#dc2626">该专家已于 {{deleted.strftime('%Y-%m-%d %H:%M')}} 删除，在回收站中。
-{% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/restore" style="display:inline"><button>恢复</button></form>{% endif %}</div>{% endif %}
-<div class="card"><h2 style="margin-top:0">{{e.name}} <small class="muted">{{e.org}} · {{e.title}}</small>
-{% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/{{e.id}}/edit" style="float:right">编辑</a>{% endif %}</h2>
-<p><b>研究方向：</b>{{e.field}}</p><p><b>简介：</b>{{e.bio}}</p>
-<p><b>手机：</b>{{e.phone}} &nbsp; <b>邮箱：</b>{{e.email}} &nbsp; <b>微信：</b>{{e.wechat}}</p>
-{% if can_sensitive %}<p><b>内部备注：</b>{{e.note}}</p>{% endif %}
-<p><b>标签：</b>{% for t in e.tags %}<span class="tag">{{t.name}}</span>{% else %}<span class="muted">无</span>{% endfor %}</p>
-<p class="muted">来源：{{e.source or '—'}} · 更新：{{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else ''}}</p>
-{% if e.source_text %}<div class="src">原文：{{e.source_text}}</div>{% endif %}</div>
-<div class="card"><h3>合作历史</h3><table><tr><th>会议</th><th>年份</th><th>角色</th><th>报告主题</th><th></th></tr>
-{% for m in e.meetings %}<tr><td>{{m.meeting}}</td><td>{{m.year or ''}}</td><td>{{m.role}}</td><td>{{m.topic}}</td>
-<td>{% if sess.role in ['admin','planner'] %}<form method="post" action="/meeting/{{m.id}}/delete"><button class="ghost">删</button></form>{% endif %}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">暂无</td></tr>{% endfor %}</table>
-{% if sess.role in ['admin','planner'] %}<form method="post" action="/expert/{{e.id}}/meeting" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-<input name="meeting" placeholder="会议名称" required><input name="year" placeholder="年份" style="width:70px">
-<input name="mrole" placeholder="角色(主席/报告人)"><input name="topic" placeholder="报告主题" style="width:240px"><button>添加</button></form>{% endif %}</div>
+{% if deleted %}<div class="msg bad">该专家已于 {{deleted.strftime('%Y-%m-%d %H:%M')}} 删除，目前在回收站中。
+{% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/restore" style="display:inline;margin-left:8px"><button class="ghost">恢复</button></form>{% endif %}</div>{% endif %}
+
+<div class="badge">
+<div><div class="nm">{{e.name}}</div><div class="org">{{e.org or '单位未填写'}}</div><div class="ttl">{{e.title}}</div>
+<div class="kv">
+<b>研究方向</b><span>{{e.field or '—'}}</span>
+<b>手机</b><span class="mono">{{e.phone or '—'}}</span>
+<b>邮箱</b><span class="mono">{{e.email or '—'}}</span>
+<b>微信</b><span class="mono">{{e.wechat or '—'}}</span>
+<b>标签</b><span>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}—{% endfor %}</span>
+</div></div>
+<div class="side">{% if sess.role in ['admin','planner'] and not deleted %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a><br><br>{% endif %}
+来源 {{e.source or '—'}}<br>更新 {{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else ''}}</div>
+</div>
+
+<div class="card"><h3>简介</h3><p style="margin:0 0 10px">{{e.bio or '（暂无）'}}</p>
+{% if can_sensitive and e.note %}<h4>内部备注</h4><p style="margin:0 0 10px">{{e.note}}</p>{% endif %}
+{% if e.source_text %}<h4>录入时的原文</h4><div class="src">{{e.source_text}}</div>{% endif %}</div>
+
+<div class="card"><h3>合作历史 <span class="muted">{{e.meetings|length}} 次</span></h3>
+<table><tr><th>会议</th><th>年份</th><th>角色</th><th>报告主题</th><th></th></tr>
+{% for m in e.meetings %}<tr><td>{{m.meeting}}</td><td class="num">{{m.year or ''}}</td><td>{{m.role}}</td><td>{{m.topic}}</td>
+<td style="text-align:right">{% if sess.role in ['admin','planner'] %}<form method="post" action="/meeting/{{m.id}}/delete" onsubmit="return confirm('删除这条合作记录？（操作历史里会保留）')"><button class="ghost">删除</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">暂无合作记录</td></tr>{% endfor %}</table>
+{% if sess.role in ['admin','planner'] and not deleted %}<form method="post" action="/expert/{{e.id}}/meeting" class="row" style="margin-top:12px">
+<input name="meeting" placeholder="会议名称" required><input name="year" placeholder="年份" style="width:80px">
+<input name="mrole" placeholder="角色（主席 / 报告人）"><input name="topic" placeholder="报告主题" style="width:240px"><button class="ghost">添加合作记录</button></form>{% endif %}</div>
+
 {% if can_sensitive %}<div class="card"><h3>修改历史</h3><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
 {% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></div>{% endif %}
-{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可恢复。确定？')"><button class="danger">删除专家</button></form>{% endif %}
+{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可以恢复。确定删除 {{e.name}}？')"><button class="danger">删除专家</button></form>{% endif %}
 {% endblock %}

@@ -32,6 +32,8 @@ def _keywords(q: str) -> list[str]:
     out = []
     for p in parts:
         p = _clean(p.strip())
+        if any(w in p for w in ("参加过", "参会", "合作过", "我们会议", "我们的会议")):
+            continue  # 交给 need_meeting 处理
         if len(p) >= 2 and p not in STOP and p not in out:
             out.append(p)
     # 英文缩写单独拿出来 (ADC / CAR-T / PD-1)

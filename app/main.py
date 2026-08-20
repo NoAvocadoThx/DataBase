@@ -39,9 +39,19 @@ async def session_mw(request: Request, call_next):
     return resp
 
 
+def sidebar_counts() -> dict:
+    with SessionLocal() as s:
+        return dict(pending_dup=s.query(DuplicateCandidate).filter_by(status="pending").count(),
+                    trash=s.query(Expert).filter(Expert.deleted_at.isnot(None)).count(),
+                    pending_docs=s.query(Document).filter_by(status="pending").count())
+
+
 def render(name: str, request: Request, **ctx):
-    ctx.update(request=request, sess=request.state.session,
-               can_sensitive=auth.can_see_sensitive((request.state.session or {}).get("role", "")))
+    sess = request.state.session
+    if sess:
+        for k, v in sidebar_counts().items():
+            ctx.setdefault(k, v)
+    ctx.update(request=request, sess=sess, can_sensitive=auth.can_see_sensitive((sess or {}).get("role", "")))
     return templates.TemplateResponse(name, ctx)
 
 
