@@ -232,7 +232,11 @@ def test_10_column_sort(client):
     asc = names("/?q=压测&sort=name&dir=asc"); desc = names("/?q=压测&sort=name&dir=desc")
     assert asc == sorted(asc) and desc == sorted(desc, reverse=True) and asc[0] != desc[0]
     h = page(client, "/?q=压测&sort=org&dir=asc")
-    assert "单位 ▲" in h and 'sort=org&dir=desc' in h  # 再点反向
+    assert "单位 ▲" in h and 'sort=org&amp;dir=desc' in h  # 再点反向
+    h = page(client, "/?q=压测&sort=org&dir=desc")
+    assert "单位 ▼" in h and 'href="?q=%E5%8E%8B%E6%B5%8B"' in h  # 第三次恢复默认
+    h = page(client, "/?q=压测&sort=meetings&dir=desc")
+    assert "合作 ▼" in h and 'sort=meetings&amp;dir=asc' in h
     rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=desc"))
     assert rows == sorted(rows, key=int, reverse=True) and int(rows[0]) >= 1
     rows = re.findall(r'<td>(\d+) 次</td>', page(client, "/?sort=meetings&dir=asc"))

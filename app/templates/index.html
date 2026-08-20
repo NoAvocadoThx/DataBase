@@ -17,8 +17,11 @@
 <div style="display:flex;align-items:center;margin-top:10px"><span class="muted">库中 {{total}} 位 · 符合条件 {{found}} 位</span>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new" style="margin-left:auto">+ 新增专家</a>{% endif %}</div></div>
 {% macro th(key, label) -%}
-{% set active = f.sort == key %}{% set nd = 'asc' if (active and f.dir == 'desc') or (not active and key != 'meetings') else 'desc' %}
-<th><a href="?{{filters|urlencode}}&sort={{key}}&dir={{nd}}" style="color:inherit;text-decoration:none" title="点击排序">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span style="color:#bbb">⇅</span>{% endif %}</a></th>
+{% set active = f.sort == key %}{% set first = 'desc' if key == 'meetings' else 'asc' %}{% set second = 'asc' if first == 'desc' else 'desc' %}
+{% if not active %}{% set href = '?' ~ filters|urlencode ~ '&sort=' ~ key ~ '&dir=' ~ first %}{% set tip = '点击排序' %}
+{% elif f.dir == first %}{% set href = '?' ~ filters|urlencode ~ '&sort=' ~ key ~ '&dir=' ~ second %}{% set tip = '再点反向' %}
+{% else %}{% set href = '?' ~ filters|urlencode %}{% set tip = '再点恢复默认排序' %}{% endif %}
+<th><a href="{{href}}" style="color:inherit;text-decoration:none" title="{{tip}}">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span style="color:#bbb">⇅</span>{% endif %}</a></th>
 {%- endmacro %}
 <div class="card"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('phone','手机')}}{{th('meetings','合作')}}</tr>
 {% for e in experts %}<tr><td><a href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
