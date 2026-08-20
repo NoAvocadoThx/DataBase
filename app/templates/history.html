@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h3>操作历史 <span class="muted">（最近 {{logs|length}} 条）</span></h3>
+<table><tr><th>时间</th><th>操作人</th><th>专家</th><th>操作</th><th>内容</th></tr>
+{% with show_expert=true %}{% include "_log_rows.html" %}{% endwith %}</table></div>
+{% endblock %}

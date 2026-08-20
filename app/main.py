@@ -9,10 +9,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from . import auth, extract, importer, search
+from . import auth, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
 from .models import (Document, DuplicateCandidate, Expert, Participation, ROLES, SessionLocal,
-                     Tag, UPLOAD_DIR, User, init_db)
+                     Tag, UPLOAD_DIR, User, init_db, live)
 
 init_db()
 with SessionLocal() as _s:
@@ -99,7 +99,7 @@ def change_password(request: Request, s: Session = Depends(db), sess=Depends(ANY
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, s: Session = Depends(db), sess=Depends(ANY),
           q: str = "", tag: str = "", org: str = "", msg: str = ""):
-    query = s.query(Expert)
+    query = live(s.query(Expert))
     if q:
         like = f"%{q}%"
         query = query.filter(or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
@@ -110,11 +110,12 @@ def index(request: Request, s: Session = Depends(db), sess=Depends(ANY),
         query = query.filter(Expert.tags.any(Tag.name == tag))
     experts = query.order_by(Expert.updated_at.desc()).all()
     pend = s.query(DuplicateCandidate).filter_by(status="pending").count()
+    trash = s.query(Expert).filter(Expert.deleted_at.isnot(None)).count()
     docs = s.query(Document).filter_by(status="pending").count()
     return render("index.html", request, q=q, tag=tag, org=org, msg=msg,
                   experts=[view(e, sess["role"]) for e in experts],
-                  tags=s.query(Tag).order_by(Tag.name).all(), total=s.query(Expert).count(),
-                  pending_dup=pend, pending_docs=docs)
+                  tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count(),
+                  pending_dup=pend, pending_docs=docs, trash=trash)
 
 
 @app.get("/expert/new", response_class=HTMLResponse)
@@ -127,8 +128,10 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
     e = s.get(Expert, eid)
     if not e:
         return back("/", "专家不存在")
-    return render("detail.html", request, e=view(e, sess["role"]), msg=msg,
-                  all_tags=s.query(Tag).order_by(Tag.name).all())
+    return render("detail.html", request, e=view(e, sess["role"]), msg=msg, deleted=e.deleted_at,
+                  all_tags=s.query(Tag).order_by(Tag.name).all(),
+                  logs=history.for_expert(s, eid) if auth.can_see_sensitive(sess["role"]) else [],
+                  labels=history.LABELS)
 
 
 @app.get("/expert/{eid}/edit", response_class=HTMLResponse)
@@ -144,6 +147,7 @@ def expert_save(request: Request, s: Session = Depends(db), sess=Depends(EDITOR)
                 bio: str = Form(""), note: str = Form(""), tags: str = Form("")):
     if eid:
         e = s.get(Expert, int(eid))
+        before = history.snapshot(e)
     else:
         e = Expert(name=name.strip(), org=org.strip(), source=f"人工录入({sess['name']})")
         s.add(e)
@@ -152,28 +156,63 @@ def expert_save(request: Request, s: Session = Depends(db), sess=Depends(EDITOR)
                      wechat=wechat, bio=bio, note=note).items():
         setattr(e, k, v.strip())
     e.tags = [importer.get_or_create_tag(s, t) for t in importer.split_tags(tags)]
-    if not eid:
+    if eid:
+        changed = history.log_update(s, sess["name"], e, before)
+        msg = "已保存" if changed else "没有改动"
+    else:
         importer.register_duplicates(s, e)
+        history.log(s, sess["name"], "create", e, history.snapshot(e), "人工录入")
+        msg = "已新建"
     s.commit()
-    return back(f"/expert/{e.id}", "已保存")
+    return back(f"/expert/{e.id}", msg)
 
 
 @app.post("/expert/{eid}/delete")
 def expert_delete(eid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
     e = s.get(Expert, eid)
-    if e:
-        s.query(DuplicateCandidate).filter(
-            (DuplicateCandidate.expert_a_id == eid) | (DuplicateCandidate.expert_b_id == eid)).delete()
-        s.delete(e)
+    if e and not e.deleted_at:
+        importer.soft_delete(s, e, sess["name"], "手动删除")
         s.commit()
-    return back("/", "已删除")
+    return back("/", "已移入回收站，可在“回收站”恢复")
+
+
+@app.get("/trash", response_class=HTMLResponse)
+def trash(request: Request, s: Session = Depends(db), sess=Depends(ADMIN), msg: str = ""):
+    items = s.query(Expert).filter(Expert.deleted_at.isnot(None)).order_by(Expert.deleted_at.desc()).all()
+    return render("trash.html", request, items=items, msg=msg)
+
+
+@app.post("/expert/{eid}/restore")
+def expert_restore(eid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
+    e = s.get(Expert, eid)
+    if e and e.deleted_at:
+        importer.restore(s, e, sess["name"])
+        s.commit()
+    return back("/trash", f"已恢复 {e.name}" if e else "不存在")
+
+
+@app.post("/expert/{eid}/purge")
+def expert_purge(eid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
+    e = s.get(Expert, eid)
+    if e and e.deleted_at:  # 只能彻底删除回收站里的
+        importer.purge(s, e, sess["name"])
+        s.commit()
+    return back("/trash", "已彻底删除（历史记录保留）")
+
+
+@app.get("/history", response_class=HTMLResponse)
+def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR)):
+    return render("history.html", request, logs=history.recent(s), labels=history.LABELS)
 
 
 @app.post("/expert/{eid}/meeting")
 def add_meeting(eid: int, s: Session = Depends(db), sess=Depends(EDITOR), meeting: str = Form(...),
                 year: str = Form(""), mrole: str = Form(""), topic: str = Form("")):
-    s.add(Participation(expert_id=eid, meeting=meeting.strip(), role=mrole.strip(), topic=topic.strip(),
-                        year=int(year) if year.strip().isdigit() else None))
+    m = Participation(expert_id=eid, meeting=meeting.strip(), role=mrole.strip(), topic=topic.strip(),
+                      year=int(year) if year.strip().isdigit() else None)
+    s.add(m)
+    history.log(s, sess["name"], "meeting_add", s.get(Expert, eid),
+                {"会议": m.meeting, "年份": m.year, "角色": m.role, "主题": m.topic})
     s.commit()
     return back(f"/expert/{eid}")
 
@@ -182,6 +221,8 @@ def add_meeting(eid: int, s: Session = Depends(db), sess=Depends(EDITOR), meetin
 def del_meeting(mid: int, s: Session = Depends(db), sess=Depends(EDITOR)):
     m = s.get(Participation, mid)
     eid = m.expert_id
+    history.log(s, sess["name"], "meeting_del", m.expert,
+                {"会议": m.meeting, "年份": m.year, "角色": m.role, "主题": m.topic})
     s.delete(m)
     s.commit()
     return back(f"/expert/{eid}")
@@ -195,7 +236,7 @@ def import_page(request: Request, sess=Depends(ADMIN), msg: str = ""):
 
 @app.post("/import")
 async def import_post(s: Session = Depends(db), sess=Depends(ADMIN), file: UploadFile = File(...)):
-    res = importer.import_excel(s, await file.read(), file.filename)
+    res = importer.import_excel(s, await file.read(), file.filename, sess["name"])
     msg = res.get("error") or f"新增 {res['created']}，更新 {res['updated']}，待处理疑似重复 {res['pending_dup']}"
     return back("/import", msg)
 
@@ -211,7 +252,8 @@ def export(s: Session = Depends(db), sess=Depends(ADMIN)):
 # ---------- 疑似重复 ----------
 @app.get("/duplicates", response_class=HTMLResponse)
 def duplicates(request: Request, s: Session = Depends(db), sess=Depends(ADMIN), msg: str = ""):
-    items = s.query(DuplicateCandidate).filter_by(status="pending").all()
+    items = [d for d in s.query(DuplicateCandidate).filter_by(status="pending")
+             if not d.expert_a.deleted_at and not d.expert_b.deleted_at]
     return render("duplicates.html", request, items=items, msg=msg)
 
 
@@ -220,7 +262,7 @@ def dup_merge(did: int, s: Session = Depends(db), sess=Depends(ADMIN), keep: int
     d = s.get(DuplicateCandidate, did)
     a, b = d.expert_a, d.expert_b
     keep_e, drop_e = (a, b) if keep == a.id else (b, a)
-    importer.merge_experts(s, keep_e, drop_e)
+    importer.merge_experts(s, keep_e, drop_e, sess["name"])
     return back("/duplicates", f"已合并到 {keep_e.name}（{keep_e.org}）")
 
 
@@ -264,7 +306,7 @@ def review_doc(did: int, request: Request, s: Session = Depends(db), sess=Depend
     doc = s.get(Document, did)
     cands = json.loads(doc.extracted_json or "[]")
     for c in cands:  # 标出库里已有的同名专家，便于判断是更新还是新建
-        c["existing"] = [f"{e.name}（{e.org}）" for e in s.query(Expert).filter_by(name=c["name"])]
+        c["existing"] = [f"{e.name}（{e.org}）" for e in live(s.query(Expert)).filter_by(name=c["name"])]
     return render("review.html", request, doc=doc, cands=cands, msg=msg, fields=extract.FIELDS)
 
 
@@ -283,11 +325,13 @@ async def approve_doc(did: int, request: Request, s: Session = Depends(db), sess
             continue
         tags = importer.split_tags(form.get(f"tags_{i}", ""))
         d["tags"] = tags or None
-        e, _ = importer.upsert_expert(s, d, doc.filename)
+        e, _ = importer.upsert_expert(s, d, doc.filename, sess["name"], "approve")
         if meeting:
-            s.add(Participation(expert_id=e.id, meeting=meeting, topic=d.get("topic", "").strip(),
-                                year=int(year) if year.isdigit() else None,
-                                role=form.get(f"role_{i}", "").strip()))
+            m = Participation(expert_id=e.id, meeting=meeting, topic=d.get("topic", "").strip(),
+                              year=int(year) if year.isdigit() else None, role=form.get(f"role_{i}", "").strip())
+            s.add(m)
+            history.log(s, sess["name"], "meeting_add", e,
+                        {"会议": meeting, "年份": m.year, "角色": m.role, "主题": m.topic}, f"来源: {doc.filename}")
         n += 1
     doc.status = "reviewed"
     s.commit()

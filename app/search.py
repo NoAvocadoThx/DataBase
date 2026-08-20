@@ -5,7 +5,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from . import extract as ex
-from .models import Expert, Tag
+from .models import Expert, Tag, live
 
 STOP = set("的 和 与 及 或 找 请 帮我 帮 我 一下 专家 老师 推荐 几位 几个 做 从事 研究 方向 领域 有 没有 过 参加 参与 我们 会议 的人".split())
 
@@ -78,7 +78,7 @@ def score(e: Expert, parsed: dict) -> tuple[int, list[str]]:
 
 def search(s: Session, parsed: dict) -> list[tuple[Expert, int, list[str]]]:
     out = []
-    for e in s.query(Expert).all():
+    for e in live(s.query(Expert)).all():
         pts, reasons = score(e, parsed)
         if reasons and pts > 0:
             out.append((e, pts, reasons))

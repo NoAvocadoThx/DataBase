@@ -9,11 +9,16 @@ sys.path.insert(0, ROOT)
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    os.environ["DB_PATH"] = str(tmp_path_factory.mktemp("db") / "acc.db")
-    for m in [m for m in sys.modules if m.startswith("app")]:
-        del sys.modules[m]
+    from app import models
+    eng = models.make_engine(str(tmp_path_factory.mktemp("db") / "acc.db"))
+    models.engine = eng
+    models.SessionLocal.configure(bind=eng)
+    models.init_db(eng)
     from fastapi.testclient import TestClient
     from app.main import app
+    from app import auth
+    with models.SessionLocal() as s:
+        auth.ensure_admin(s)
     return TestClient(app, follow_redirects=False)
 
 
@@ -146,3 +151,44 @@ def test_7_edit_and_delete(client):
     assert "首席科学家" in page(client, f"/expert/{eid}")
     client.post(f"/expert/{eid}/delete")
     assert "暂无数据" in page(client, "/?q=王强")
+
+
+def test_8_history_and_trash(client):
+    login(client, "admin", "admin123")
+    client.post("/expert/save", data={"name": "测试专家", "org": "测试医院", "title": "教授", "tags": "A"})
+    html = page(client, "/?q=测试专家")
+    eid = re.search(r'/expert/(\d+)"', html).group(1)
+    client.post("/expert/save", data={"eid": eid, "name": "测试专家", "org": "测试医院", "title": "主任医师", "tags": "A, B"})
+    r = client.post("/expert/save", data={"eid": eid, "name": "测试专家", "org": "测试医院", "title": "主任医师", "tags": "A, B"})
+    assert "%E6%B2%A1%E6%9C%89%E6%94%B9%E5%8A%A8" in r.headers["location"]  # 没有改动 → 不记录
+    client.post(f"/expert/{eid}/meeting", data={"meeting": "测试会", "year": "2024"})
+    d = page(client, f"/expert/{eid}")
+    assert "修改历史" in d and "新建" in d and "添加合作记录" in d
+    assert "line-through\">教授</span> → <span style=\"color:#166534\">主任医师" in d
+    assert "line-through\">A</span> → <span style=\"color:#166534\">A, B" in d
+    # 全局历史
+    h = page(client, "/history")
+    assert "测试专家" in h and "主任医师" in h
+    # 删除 → 回收站 → 列表不见 → 恢复
+    r = client.post(f"/expert/{eid}/delete")
+    assert "%E5%9B%9E%E6%94%B6%E7%AB%99" in r.headers["location"]  # 回收站
+    assert "暂无数据" in page(client, "/?q=测试专家")
+    assert "没有匹配" in page(client, "/ask?q=测试专家")
+    t = page(client, "/trash")
+    assert "测试专家" in t and "恢复" in t
+    assert "该专家已于" in page(client, f"/expert/{eid}")
+    client.post(f"/expert/{eid}/restore")
+    assert "测试专家" in page(client, "/?q=测试专家") and "测试专家" not in page(client, "/trash")
+    d = page(client, f"/expert/{eid}")
+    assert "从回收站恢复" in d and d.count("<span class=\"tag\"") >= 6  # 多条历史
+    # 彻底删除必须先在回收站
+    client.post(f"/expert/{eid}/purge")
+    assert "测试专家" in page(client, "/?q=测试专家")
+    client.post(f"/expert/{eid}/delete"); client.post(f"/expert/{eid}/purge")
+    assert "暂无数据" in page(client, "/?q=测试专家") and "测试专家" not in page(client, "/trash")
+    assert "彻底删除" in page(client, "/history")  # 历史保留
+    # 实习生看不到历史
+    login(client, "admin", "admin123")
+    client.post("/users", data={"username": "tom2", "password": "tom123456", "role": "intern"})
+    login(client, "tom2", "tom123456")
+    assert client.get("/history").status_code == 403 and client.get("/trash").status_code == 403

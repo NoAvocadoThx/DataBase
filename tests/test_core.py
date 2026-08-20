@@ -20,6 +20,18 @@ def test_import_dedup_and_duplicate_candidates(s):
     assert r == {"created": 3, "updated": 0, "pending_dup": 1}
     r = importer.import_excel(s, data, "a.xlsx")  # 重复导入 → 全部更新
     assert r["created"] == 0 and r["updated"] == 3 and s.query(Expert).count() == 3
+    from app import history
+    logs = history.recent(s)
+    assert len(logs) == 3 and all(c.action == "create" for c in logs)  # 无变化的更新不记录
+
+
+def test_history_diff(s):
+    from app import history
+    importer.import_excel(s, xlsx([["张伟", "北大", "教授", "", "", "", "", "", "肿瘤", ""]]), "a.xlsx")
+    importer.import_excel(s, xlsx([["张伟", "北大", "主任医师", "ADC", "", "", "", "", "肿瘤,ADC", ""]]), "b.xlsx")
+    c = history.recent(s)[0]
+    assert c.action == "import" and c.diff["title"] == ["教授", "主任医师"] and c.diff["tags"] == ["肿瘤", "ADC, 肿瘤"]
+    assert "name" not in c.diff
 
 
 def test_merge(s):
@@ -28,12 +40,20 @@ def test_merge(s):
         ["张伟", "", "", "ADC", "13800001111", "", "", "", "ADC", ""]]), "a.xlsx")
     a, b = s.query(Expert).order_by(Expert.id).all()
     s.add(Participation(expert_id=b.id, meeting="2024大会")); s.commit()
-    keep = importer.merge_experts(s, a, b)
-    assert s.query(Expert).count() == 1
+    keep = importer.merge_experts(s, a, b, actor="tester")
+    from app.models import live
+    from app import history
+    assert live(s.query(Expert)).count() == 1 and s.query(Expert).count() == 2  # 被合并方进回收站
+    assert b.deleted_at is not None and b.deleted_by == "tester"
+    acts = [c.action for c in history.for_expert(s, keep.id)]
+    assert "merge" in acts and "create" in acts
+    importer.restore(s, b, "tester"); s.commit()
+    assert live(s.query(Expert)).count() == 2 and s.query(DuplicateCandidate).filter_by(status="pending").count() == 1
+    importer.purge(s, b, "tester"); s.commit()
+    assert s.query(Expert).count() == 1 and history.for_expert(s, b.id)[0].action == "purge"
     assert keep.org == "北大" and keep.field == "ADC" and keep.phone == "13800001111"
     assert {t.name for t in keep.tags} == {"肿瘤", "ADC"}
     assert [m.meeting for m in keep.meetings] == ["2024大会"]
-    assert s.query(DuplicateCandidate).first().status == "merged"
 
 
 def test_export_roundtrip(s):

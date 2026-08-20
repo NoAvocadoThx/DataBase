@@ -45,6 +45,8 @@ class Expert(Base):
     source_text = Column(Text, default="")         # 来源原文片段
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    deleted_at = Column(DateTime, index=True)              # 软删除（回收站）
+    deleted_by = Column(String(64), default="")
     tags = relationship("Tag", secondary=expert_tag, back_populates="experts")
     meetings = relationship("Participation", back_populates="expert",
                             cascade="all, delete-orphan")
@@ -97,6 +99,11 @@ class DuplicateCandidate(Base):
     expert_b = relationship("Expert", foreign_keys=[expert_b_id])
 
 
+def live(query):
+    """只取未删除的专家。"""
+    return query.filter(Expert.deleted_at.is_(None))
+
+
 def make_engine(path: str = DB_PATH):
     return create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
 
@@ -105,7 +112,9 @@ engine = make_engine()
 SessionLocal = sessionmaker(bind=engine)
 
 
-def init_db(eng=engine):
+def init_db(eng=None):
+    from . import history  # noqa: F401  注册 ChangeLog 表
+    eng = eng or engine
     Base.metadata.create_all(eng)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     _migrate(eng)

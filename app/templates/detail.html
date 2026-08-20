@@ -1,4 +1,6 @@
 {% extends "base.html" %}{% block body %}
+{% if deleted %}<div class="msg" style="background:#fee2e2;border-color:#dc2626">该专家已于 {{deleted.strftime('%Y-%m-%d %H:%M')}} 删除，在回收站中。
+{% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/restore" style="display:inline"><button>恢复</button></form>{% endif %}</div>{% endif %}
 <div class="card"><h2 style="margin-top:0">{{e.name}} <small class="muted">{{e.org}} · {{e.title}}</small>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/{{e.id}}/edit" style="float:right">编辑</a>{% endif %}</h2>
 <p><b>研究方向：</b>{{e.field}}</p><p><b>简介：</b>{{e.bio}}</p>
@@ -14,5 +16,7 @@
 {% if sess.role in ['admin','planner'] %}<form method="post" action="/expert/{{e.id}}/meeting" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
 <input name="meeting" placeholder="会议名称" required><input name="year" placeholder="年份" style="width:70px">
 <input name="mrole" placeholder="角色(主席/报告人)"><input name="topic" placeholder="报告主题" style="width:240px"><button>添加</button></form>{% endif %}</div>
-{% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('确定删除该专家？不可恢复')"><button class="danger">删除专家</button></form>{% endif %}
+{% if can_sensitive %}<div class="card"><h3>修改历史</h3><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
+{% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></div>{% endif %}
+{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可恢复。确定？')"><button class="danger">删除专家</button></form>{% endif %}
 {% endblock %}
