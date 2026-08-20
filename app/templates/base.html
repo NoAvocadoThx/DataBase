@@ -88,7 +88,13 @@ button.sm,.btn.sm{height:31px;padding:0 11px;font-size:.88rem}
 
 /* 列表页：分面栏 + 主区 */
 .split{display:grid;grid-template-columns:232px 1fr;gap:24px;align-items:start}
-.facets{position:sticky;top:84px}
+.facets{position:sticky;top:72px;max-height:calc(100vh - 88px);overflow-y:auto;overscroll-behavior:contain;padding:0 10px 8px 0}
+.facets::-webkit-scrollbar{width:8px}
+.facets::-webkit-scrollbar-thumb{background:#D3DBE0;border-radius:4px}
+.facets::-webkit-scrollbar-thumb:hover{background:#B9C4CB}
+.facets::-webkit-scrollbar-track{background:transparent}
+.facets{scrollbar-width:thin;scrollbar-color:#D3DBE0 transparent}
+.facets h4:first-child{margin-top:0}
 .facets h4{margin:16px 0 6px;font-size:.88rem;letter-spacing:.02em}
 .facets a{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:4px;color:var(--text);text-decoration:none;font-size:.95rem}
 .facets a:hover{background:var(--hover)}.facets a.on{background:var(--tint);color:var(--teal-2);font-weight:600}
@@ -153,7 +159,7 @@ table.cal .d{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-
 
 @media (max-width:960px){
   .top{height:auto;flex-wrap:wrap;padding:8px 14px;gap:8px 16px;position:static}.top nav{height:auto;flex-wrap:wrap}.top nav a,.top nav .dd>span{padding:6px 8px}
-  main{padding:16px}.split,.detail{grid-template-columns:1fr}.facets{position:static}.grid,.namecard{grid-template-columns:1fr}.namecard .kv{grid-template-columns:1fr}.namecard .side{text-align:left}th{position:static}
+  main{padding:16px}.split,.detail{grid-template-columns:1fr}.facets{position:static;max-height:none;overflow:visible;padding:0}.grid,.namecard{grid-template-columns:1fr}.namecard .kv{grid-template-columns:1fr}.namecard .side{text-align:left}th{position:static}
 }
 @media (prefers-reduced-motion:no-preference){button,.btn,.top nav a,.facets a{transition:background .12s,color .12s}}
 </style></head><body>
