@@ -105,6 +105,30 @@ button.sm,.btn.sm{height:30px;padding:0 10px;font-size:.84rem}
 .namecard .kv b{display:block;color:var(--muted);font-weight:600;font-size:.76rem;letter-spacing:.04em;margin-bottom:2px}
 .namecard .side{text-align:right;font-size:.84rem;color:var(--muted)}
 
+/* 专家详情：左内容 + 右信息栏 */
+.detail{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.hero{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 24px;margin-bottom:16px}
+.hero .nm{font-size:2rem;font-weight:700;line-height:1.15;display:inline-block;vertical-align:middle}
+.hero .org{font-size:1.05rem;margin-top:4px}
+.hero .ttl{color:var(--muted);font-size:.92rem}
+.hero .field{font-size:1.05rem;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.hero .field b{display:block;font-size:.74rem;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-bottom:3px}
+.quick{display:flex;gap:26px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
+.quick div b{display:block;font-size:.72rem;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.quick div span{font-size:1.25rem;font-weight:700;font-family:var(--mono)}
+.quick div span.txt{font-family:var(--sans);font-size:1rem;font-weight:600}
+.rail{display:grid;gap:14px}
+.rail .box{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.rail h4{margin:0 0 10px;font-size:.74rem;letter-spacing:.08em;color:var(--muted)}
+.rail .kv{display:grid;gap:8px;font-size:.92rem}
+.rail .kv > div{display:grid;grid-template-columns:44px 1fr;gap:8px;align-items:baseline}
+.rail .kv i{font-style:normal;color:var(--muted);font-size:.8rem}
+details.add{margin-top:12px}
+details.add>summary{cursor:pointer;color:var(--teal);font-size:.9rem;list-style:none}
+details.add>summary::-webkit-details-marker{display:none}
+details.add>summary::before{content:"+ ";font-weight:700}
+details.add[open]>summary::before{content:"− "}
+
 /* 月历 */
 table.cal{table-layout:fixed}
 table.cal th{text-align:center;font-size:.74rem;padding:6px 4px;position:static}
@@ -128,7 +152,7 @@ table.cal .d{font-family:var(--mono);font-size:.8rem;color:var(--muted);margin-b
 
 @media (max-width:960px){
   .top{height:auto;flex-wrap:wrap;padding:8px 14px;gap:8px 16px;position:static}.top nav{height:auto;flex-wrap:wrap}.top nav a,.top nav .dd>span{padding:6px 8px}
-  main{padding:16px}.split{grid-template-columns:1fr}.facets{position:static}.grid,.namecard{grid-template-columns:1fr}.namecard .kv{grid-template-columns:1fr}.namecard .side{text-align:left}th{position:static}
+  main{padding:16px}.split,.detail{grid-template-columns:1fr}.facets{position:static}.grid,.namecard{grid-template-columns:1fr}.namecard .kv{grid-template-columns:1fr}.namecard .side{text-align:left}th{position:static}
 }
 @media (prefers-reduced-motion:no-preference){button,.btn,.top nav a,.facets a{transition:background .12s,color .12s}}
 </style></head><body>

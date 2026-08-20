@@ -1,62 +1,89 @@
 {% extends "base.html" %}{% block body %}
+{% set editable = sess.role in ['admin','planner'] and not deleted %}
 {% if deleted %}<div class="msg bad">该专家已于 {{deleted.strftime('%Y-%m-%d %H:%M')}} 删除，目前在回收站中。
 {% if sess.role=='admin' %}<form method="post" action="/expert/{{e.id}}/restore" style="display:inline;margin-left:8px"><button class="ghost">恢复</button></form>{% endif %}</div>{% endif %}
 
-<div class="card namecard">
-<div><div class="nm">{{e.name}}</div><div class="org">{{e.org or '单位未填写'}}</div><div class="ttl">{{e.title}}</div>
-<div class="kv">
-<div><b>研究方向</b>{{e.field or '—'}}</div>
-<div><b>手机</b><span class="mono">{{e.phone or '—'}}</span></div>
-<div><b>邮箱</b><span class="mono">{{e.email or '—'}}</span></div>
-<div><b>微信</b><span class="mono">{{e.wechat or '—'}}</span></div>
-<div style="grid-column:span 2"><b>标签</b>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}—{% endfor %}</div>
-</div></div>
-<div class="side">{% if e.focus_level %}<div style="margin-bottom:8px"><span class="focus {{e.focus_level}}">{{e.focus_label}}</span></div>{% endif %}
-{% if sess.role in ['admin','planner'] and not deleted %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a><br><br>{% endif %}
-来源 {{e.source or '—'}}<br>更新 {{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else ''}}</div>
-</div>
+<div class="hero">
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+<div><div class="nm">{{e.name}}</div>
+{% if e.focus_level %} <span class="focus {{e.focus_level}}" style="vertical-align:middle;margin-left:8px">{{e.focus_label}}</span>{% endif %}
+<div class="org">{{e.org or '单位未填写'}}</div><div class="ttl">{{e.title or '职务未填写'}}</div></div>
+{% if editable %}<a class="btn" href="/expert/{{e.id}}/edit">编辑资料</a>{% endif %}</div>
 
-<div class="card"><div class="grid">
-<div><h3>重点关注</h3>
-{% if sess.role in ['admin','planner'] and not deleted %}
-<form method="post" action="/expert/{{e.id}}/focus" style="display:grid;gap:8px">
-<div class="row">{% for k in focus_order %}<label class="row" style="margin:0;gap:4px;font-size:.92rem;color:var(--text)">
-<input type="radio" name="level" value="{{k}}" {% if e.focus_level == k %}checked{% endif %} style="height:auto;width:auto"> <span class="focus {{k}}">{{focus_levels[k]}}</span></label>{% endfor %}
-<label class="row" style="margin:0;gap:4px;font-size:.92rem;color:var(--text)"><input type="radio" name="level" value="" {% if not e.focus_level %}checked{% endif %} style="height:auto;width:auto"> 未分级</label></div>
-<input name="note" value="{{e.focus_note or ''}}" placeholder="关注说明，如：ADC 领域首选主席人选" class="w">
-<div><button class="ghost">保存关注分级</button></div></form>
-{% else %}<p style="margin:0">{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span> {{e.focus_note or ''}}{% else %}<span class="muted">未分级</span>{% endif %}</p>{% endif %}</div>
+<div class="field"><b>研究方向</b>{{e.field or '未填写'}}
+<div style="margin-top:8px">{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% else %}<span class="muted">暂无标签</span>{% endfor %}</div></div>
 
-<div><h3>所属分组</h3>
-<p style="margin:0 0 8px">{% for g in e.groups %}<a class="tag warn" href="/groups/{{g.id}}">{{g.name}}{% if not g.is_public %} · 私有{% endif %}</a>{% else %}<span class="muted">还没有加入任何分组</span>{% endfor %}</p>
-{% if sess.role in ['admin','planner'] and not deleted %}
-<form method="post" action="/expert/{{e.id}}/groups" class="row">
-<select name="gid" required><option value="">选择分组…</option>
-{% for g in my_groups %}{% if g not in e.groups %}<option value="{{g.id}}">{{g.name}}{% if not g.is_public %}（私有）{% endif %}</option>{% endif %}{% endfor %}</select>
-<button class="ghost">加入</button><a class="muted" href="/groups">管理分组</a></form>
-{% if e.groups %}<form method="post" action="/expert/{{e.id}}/groups" class="row" style="margin-top:8px">
-<input type="hidden" name="action" value="del">
-<select name="gid" required><option value="">移出分组…</option>{% for g in e.groups %}<option value="{{g.id}}">{{g.name}}</option>{% endfor %}</select>
-<button class="ghost">移出</button></form>{% endif %}{% endif %}</div>
+<div class="quick">
+<div><b>合作次数</b><span>{{stats.count}}</span></div>
+{% if stats.latest %}<div><b>最近合作</b><span>{{stats.latest}}</span></div>{% endif %}
+{% if stats.first and stats.first != stats.latest %}<div><b>首次合作</b><span>{{stats.first}}</span></div>{% endif %}
+{% if stats.top_role %}<div><b>常任角色</b><span class="txt">{{stats.top_role}}</span></div>{% endif %}
+{% if e.groups %}<div><b>所属分组</b><span class="txt">{{e.groups|length}} 个</span></div>{% endif %}
 </div></div>
 
-<div class="card"><h3>简介</h3><p style="margin:0 0 10px">{{e.bio or '（暂无）'}}</p>
-{% if can_sensitive and e.note %}<h4>内部备注</h4><p style="margin:0 0 10px">{{e.note}}</p>{% endif %}
-{% if e.source_text and can_sensitive %}<h4>录入时的原文</h4><div class="src">{{e.source_text}}</div>{% endif %}</div>
-
-<div class="card"><h3>合作历史 <span class="muted">{{e.meetings|length}} 次</span></h3>
-<table><tr><th>会议</th><th>年份</th><th>角色</th><th>报告主题</th><th></th></tr>
-{% for m in e.meetings %}<tr><td>{% if m.meeting_id %}<a href="/meetings/{{m.meeting_id}}">{{m.meeting_name}}</a>{% else %}{{m.meeting_name}}{% endif %}</td><td class="mono">{{m.year or ''}}</td><td>{{m.role}}</td><td>{{m.topic}}</td>
-<td style="text-align:right">{% if sess.role in ['admin','planner'] %}<form method="post" action="/meeting/{{m.id}}/delete" onsubmit="return confirm('删除这条合作记录？（操作历史里会保留）')"><button class="ghost">删除</button></form>{% endif %}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">暂无合作记录</td></tr>{% endfor %}</table>
-{% if sess.role in ['admin','planner'] and not deleted %}<form method="post" action="/expert/{{e.id}}/meeting" class="row" style="margin-top:12px">
-<select name="meeting_id" style="width:280px"><option value="">选择已有会议…</option>
+<div class="detail">
+<section>
+<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px">
+<h3 style="margin:0">合作历史 <span class="muted" style="font-weight:400">{{stats.count}} 次</span></h3>
+{% if ms %}<a class="muted" href="/meetings">会议日历</a>{% endif %}</div>
+{% if ms %}<table><tr><th>会议</th><th class="mono" style="width:70px">年份</th><th style="width:100px">角色</th><th>报告主题</th>{% if editable %}<th style="width:60px"></th>{% endif %}</tr>
+{% for m in ms %}<tr><td>{% if m.meeting_id %}<a href="/meetings/{{m.meeting_id}}">{{m.meeting_name}}</a>{% else %}{{m.meeting_name}}{% endif %}</td>
+<td class="mono">{{m.year or ''}}</td><td>{{m.role or '—'}}</td><td>{{m.topic or '—'}}</td>
+{% if editable %}<td style="text-align:right"><form method="post" action="/meeting/{{m.id}}/delete" onsubmit="return confirm('删除这条合作记录？（操作历史里会保留）')"><button class="ghost sm">删除</button></form></td>{% endif %}</tr>{% endfor %}</table>
+{% else %}<p class="muted" style="margin:0">还没有合作记录{% if editable %}，在下面添加{% endif %}。</p>{% endif %}
+{% if editable %}<details class="add"><summary>添加合作记录</summary>
+<form method="post" action="/expert/{{e.id}}/meeting" class="row" style="margin-top:10px">
+<select name="meeting_id" style="width:260px"><option value="">选择已有会议…</option>
 {% for mt in meetings %}<option value="{{mt.id}}">{{mt.name}}{% if mt.year %}（{{mt.year}}）{% endif %}</option>{% endfor %}</select>
-<span class="muted">或新建：</span><input name="meeting" placeholder="会议名称" style="width:180px"><input name="year" placeholder="年份" style="width:80px">
-<input name="mrole" placeholder="角色（主席 / 报告人）" style="width:150px"><input name="topic" placeholder="报告主题" style="width:200px"><button class="ghost">添加合作记录</button></form>
-<p class="muted" style="margin:8px 0 0">优先从下拉里选，避免同一场会议出现多个名字。<a href="/meetings">管理会议</a></p>{% endif %}</div>
+<span class="muted">或新建</span><input name="meeting" placeholder="会议名称" style="width:160px"><input name="year" placeholder="年份" style="width:76px">
+<input name="mrole" placeholder="角色" style="width:120px"><input name="topic" placeholder="报告主题" style="width:180px"><button class="ghost">添加</button></form>
+<p class="muted" style="margin:8px 0 0">优先从下拉里选，避免同一场会议出现多个名字。</p></details>{% endif %}</div>
 
-{% if can_sensitive %}<div class="card"><h3>修改历史</h3><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
-{% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></div>{% endif %}
-{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可以恢复。确定删除 {{e.name}}？')" class="row"><button class="danger">删除专家</button><span class="muted">删除后进入回收站，可恢复</span></form>{% endif %}
+<div class="card"><h3>简介</h3><p style="margin:0">{{e.bio or '（暂无简介）'}}</p>
+{% if can_sensitive and e.note %}<h4 style="margin-top:16px">内部备注</h4><p style="margin:0">{{e.note}}</p>{% endif %}
+{% if can_sensitive and e.source_text %}<details class="add" style="margin-top:14px"><summary>录入时的原文</summary><div class="src" style="margin-top:8px">{{e.source_text}}</div></details>{% endif %}</div>
+
+{% if can_sensitive %}<div class="card"><details class="add" {% if logs %}open{% endif %}><summary>修改历史{% if logs %}（{{logs|length}} 条）{% endif %}</summary>
+<table style="margin-top:10px"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
+{% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></details></div>{% endif %}
+</section>
+
+<aside class="rail">
+{% if can_sensitive or e.phone or e.email or e.wechat %}
+<div class="box"><h4>联系方式</h4><div class="kv">
+<div><i>手机</i><span class="mono">{{e.phone or '—'}}</span></div>
+<div><i>邮箱</i><span class="mono">{{e.email or '—'}}</span></div>
+<div><i>微信</i><span class="mono">{{e.wechat or '—'}}</span></div>
+</div></div>{% endif %}
+
+<div class="box"><h4>重点关注</h4>
+{% if editable %}
+<form method="post" action="/expert/{{e.id}}/focus" style="display:grid;gap:8px">
+<select name="level"><option value="" {% if not e.focus_level %}selected{% endif %}>未分级</option>
+{% for k in focus_order %}<option value="{{k}}" {% if e.focus_level == k %}selected{% endif %}>{{focus_levels[k]}}</option>{% endfor %}</select>
+<input name="note" value="{{e.focus_note or ''}}" placeholder="关注说明（可选）" class="w">
+<div><button class="ghost sm">保存</button></div></form>
+{% else %}<p style="margin:0">{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span>{% else %}<span class="muted">未分级</span>{% endif %}
+{% if e.focus_note %}<br><span class="muted">{{e.focus_note}}</span>{% endif %}</p>{% endif %}
+{% if editable and e.focus_note %}<p class="muted" style="margin:8px 0 0">{{e.focus_note}}</p>{% endif %}</div>
+
+<div class="box"><h4>所属分组</h4>
+<p style="margin:0 0 8px">{% for g in e.groups %}<a class="tag warn" href="/groups/{{g.id}}">{{g.name}}</a>{% else %}<span class="muted">未加入分组</span>{% endfor %}</p>
+{% if editable %}<form method="post" action="/expert/{{e.id}}/groups" class="row" style="gap:6px">
+<select name="gid" required style="flex:1"><option value="">加入分组…</option>
+{% for g in my_groups %}{% if g not in e.groups %}<option value="{{g.id}}">{{g.name}}{% if not g.is_public %}（私有）{% endif %}</option>{% endif %}{% endfor %}</select>
+<button class="ghost sm">加入</button></form>
+{% if e.groups %}<form method="post" action="/expert/{{e.id}}/groups" class="row" style="gap:6px;margin-top:6px">
+<input type="hidden" name="action" value="del">
+<select name="gid" required style="flex:1"><option value="">移出分组…</option>{% for g in e.groups %}<option value="{{g.id}}">{{g.name}}</option>{% endfor %}</select>
+<button class="ghost sm">移出</button></form>{% endif %}{% endif %}</div>
+
+<div class="box"><h4>来源</h4><div class="kv">
+<div><i>录入</i><span>{{e.source or '—'}}</span></div>
+<div><i>更新</i><span class="mono">{{e.updated_at.strftime('%Y-%m-%d %H:%M') if e.updated_at else '—'}}</span></div>
+</div>
+{% if sess.role=='admin' and not deleted %}<form method="post" action="/expert/{{e.id}}/delete" onsubmit="return confirm('删除后进入回收站，可以恢复。确定删除 {{e.name}}？')" style="margin-top:12px">
+<button class="danger sm">删除专家</button> <span class="muted">可从回收站恢复</span></form>{% endif %}</div>
+</aside>
+</div>
 {% endblock %}

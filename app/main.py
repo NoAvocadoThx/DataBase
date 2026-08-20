@@ -206,21 +206,41 @@ def apply_filters(s: Session, f: dict):
     return query
 
 
+def top_tag_names(s: Session, limit: int = 10) -> list[str]:
+    """全库最常用的标签名。分面列表用它固定顺序——如果按"当前结果"排，
+    点一个标签会把整列表重排，用户刚才在看的选项就找不到了。"""
+    from sqlalchemy import func
+    from .models import expert_tag
+    return [n for (n, _) in (s.query(Tag.name, func.count(expert_tag.c.expert_id))
+                             .join(expert_tag, Tag.id == expert_tag.c.tag_id)
+                             .group_by(Tag.name)
+                             .order_by(func.count(expert_tag.c.expert_id).desc(), Tag.name)
+                             .limit(limit))]
+
+
 def facet_counts(s: Session, f: dict) -> dict:
-    """分面计数：每个分面在"去掉自身条件"的结果集上统计，这样点选后其他选项仍可见。"""
+    """分面计数：每个分面在"去掉自身条件"的结果集上统计，这样点选后其他选项仍可见。
+    各分面的条目和顺序保持固定，只有数字随筛选变化。"""
     from sqlalchemy import func
     from .models import expert_tag
     base_no_org = apply_filters(s, {**f, "org_type": ""}).order_by(None)
     base_no_coop = apply_filters(s, {**f, "coop": ""}).order_by(None)
-    base = apply_filters(s, f).order_by(None)
+    base_no_focus = apply_filters(s, {**f, "focus": ""}).order_by(None)
+    base_no_tag = apply_filters(s, {**f, "tag": ""}).order_by(None)
     org_types = [(k, label, base_no_org.filter(org_type_cond(k)).count()) for k, (label, _) in ORG_TYPES.items()]
     coop = [(k, label, base_no_coop.filter(coop_cond(k)).count()) for k, label in COOP_BUCKETS.items()]
-    base_no_focus = apply_filters(s, {**f, "focus": ""}).order_by(None)
     focus = [(k, FOCUS_LEVELS[k], base_no_focus.filter(Expert.focus_level == k).count()) for k in FOCUS_ORDER]
-    ids = base.with_entities(Expert.id).subquery()
-    top_tags = (s.query(Tag.name, func.count(expert_tag.c.expert_id)).join(expert_tag, Tag.id == expert_tag.c.tag_id)
-                .filter(expert_tag.c.expert_id.in_(s.query(ids.c.id))).group_by(Tag.name)
-                .order_by(func.count(expert_tag.c.expert_id).desc(), Tag.name).limit(10).all())
+
+    names = top_tag_names(s)
+    for picked in importer.split_tags(f.get("tag", "")):   # 选中的标签即使不在前十也要留在列表里
+        if picked and picked not in names:
+            names.append(picked)
+    ids = base_no_tag.with_entities(Expert.id).subquery()
+    counts = dict(s.query(Tag.name, func.count(expert_tag.c.expert_id))
+                  .join(expert_tag, Tag.id == expert_tag.c.tag_id)
+                  .filter(Tag.name.in_(names), expert_tag.c.expert_id.in_(s.query(ids.c.id)))
+                  .group_by(Tag.name).all())
+    top_tags = [(n, counts.get(n, 0)) for n in names]
     return dict(org_types=org_types, coop=coop, tags=top_tags, focus=focus)
 
 
@@ -263,7 +283,15 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
     e = s.get(Expert, eid)
     if not e:
         return back("/", "专家不存在")
+    from collections import Counter
+    ms = sorted(e.meetings, key=lambda m: (m.year or 0), reverse=True)
+    roles = Counter(m.role.strip() for m in ms if m.role and m.role.strip())
+    stats = dict(count=len(ms), latest=(ms[0].year if ms else None),
+                 first=(ms[-1].year if ms else None),
+                 top_role=(roles.most_common(1)[0][0] if roles else ""),
+                 topics=[m.topic for m in ms if m.topic][:3])
     return render("detail.html", request, e=view(e, sess["role"]), msg=msg, deleted=e.deleted_at,
+                  ms=ms, stats=stats,
                   expert=e, focus_levels=FOCUS_LEVELS, focus_order=FOCUS_ORDER,
                   meetings=s.query(Meeting).order_by(Meeting.year.desc(), Meeting.name).all(),
                   my_groups=visible_groups(s, sess).all(),

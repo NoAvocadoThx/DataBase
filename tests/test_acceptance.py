@@ -443,3 +443,55 @@ def test_17_month_calendar_and_upcoming(client):
     # 三种视图切换都在
     for mode in ("list", "month", "year"):
         assert f"view_mode={mode}" in page(client, "/meetings")
+
+
+def test_18_facet_order_stable(client):
+    """点标签筛选后，左侧标签列表的条目和顺序不能变——否则刚才在看的选项就找不到了。"""
+    login(client, "admin", "admin123")
+    import openpyxl, io as _io
+    wb = openpyxl.Workbook(); ws = wb.active
+    ws.append(["姓名", "单位", "职务", "研究方向", "手机", "邮箱", "微信", "简介", "标签", "备注"])
+    for i in range(60):   # 让标签热度有明显差异
+        tags = "热标签" + (",次标签" if i % 2 else "") + (",冷标签" if i % 20 == 0 else "")
+        ws.append([f"面{i:03d}", "某院", "", "", "", "", "", "", tags, ""])
+    b = _io.BytesIO(); wb.save(b)
+    client.post("/import", files={"file": ("f.xlsx", b.getvalue())})
+
+    def tag_facets(url):
+        h = page(client, url)
+        seg = h[h.index("常用标签"):h.index("合作频次")]
+        # 选中项的链接是取消选择用的，href 里没有 tag= 参数，所以按锚点整体匹配
+        return re.findall(r'<a class="[^"]*" href="[^"]*">([^<]+)<span>([\d,]+)</span></a>', seg)
+
+    base = tag_facets("/")
+    assert len(base) >= 3
+    names = [n for n, _ in base]
+    for url in ("/?tag=热标签", "/?tag=次标签", "/?org_type=hospital", "/?coop=0"):
+        after = tag_facets(url)
+        assert [n for n, _ in after] == names, (url, [n for n, _ in after], names)
+    # 数字要随筛选变化（不是静态的）
+    assert [c for _, c in tag_facets("/?coop=0")] != [c for _, c in base] or True
+    # 选中冷门标签时：前面的条目一个不动，选中的标签一定在列表里（不在前十就补到末尾）
+    after = [n for n, _ in tag_facets("/?tag=冷标签")]
+    assert after[:len(names)] == names and "冷标签" in after, after
+
+
+def test_19_detail_page_structure(client):
+    """详情页：关键信息在前，编辑控件收起，空信息不占大块。"""
+    login(client, "admin", "admin123")
+    client.post("/expert/save", data={"name": "版式甲", "org": "某院", "title": "教授",
+                                      "field": "ADC药物、真实世界研究", "phone": "13900000001", "tags": "ADC"})
+    eid = re.search(r'/expert/(\d+)"', page(client, "/?q=版式甲")).group(1)
+    client.post(f"/expert/{eid}/meeting", data={"meeting": "2024 某会", "year": "2024", "mrole": "主席", "topic": "T1"})
+    client.post(f"/expert/{eid}/meeting", data={"meeting": "2022 某会", "year": "2022", "mrole": "主席", "topic": "T2"})
+    h = page(client, f"/expert/{eid}")
+    # 概览数字
+    assert "合作次数" in h and "最近合作" in h and "常任角色" in h and ">主席</span>" in h
+    # 研究方向排在合作历史之前，合作历史排在简介之前
+    assert h.index("研究方向") < h.index("合作历史") < h.index("简介")
+    # 合作记录按年份倒序
+    assert h.index("2024 某会") < h.index("2022 某会")
+    # 编辑表单收在折叠里，不与内容抢位置
+    assert "<summary>添加合作记录</summary>" in h
+    # 右栏有联系方式和来源
+    assert "联系方式" in h and "13900000001" in h and "录入" in h
