@@ -37,8 +37,8 @@
 {% else %}{% set href = '?' ~ filters|urlencode %}{% set tip = '再点恢复默认排序' %}{% endif %}
 <th class="{{cls}}"><a href="{{href}}" class="{{'on' if active}}" title="{{tip}}">{{label}}{% if active %} {{ '▲' if f.dir == 'asc' else '▼' }}{% else %} <span class="dim">⇅</span>{% endif %}</a></th>
 {%- endmacro %}
-<div class="card flush"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('focus','关注')}}{{th('phone','手机')}}{{th('meetings','合作','num')}}</tr>
-{% for e in experts %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
+<div class="card flush"><table><tr>{{th('name','姓名')}}{{th('org','单位')}}{{th('title','职务','nw')}}{{th('field','研究方向')}}{{th('tags','标签')}}{{th('focus','关注')}}{{th('phone','手机')}}{{th('meetings','合作','num')}}</tr>
+{% for e in experts %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td class="nw">{{e.title}}</td>
 <td>{{e.field}}</td><td>{% for t in e.tags %}<a class="tag" href="/?tag={{t.name}}">{{t.name}}</a>{% endfor %}</td>
 <td>{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span>{% endif %}</td><td class="mono">{{e.phone}}</td><td class="num">{{e.meetings|length}} 次</td></tr>
 {% else %}<tr><td colspan="8" class="muted" style="padding:28px;text-align:center">暂无数据{% if params %}，试试放宽筛选条件{% elif sess.role=='admin' %}，先 <a href="/import">导入 Excel</a> 或 <a href="/documents">上传资料</a>{% endif %}</td></tr>{% endfor %}</table>

@@ -223,3 +223,28 @@ def test_deploy_config_has_no_weak_defaults():
     assert "please-change-me" not in compose
     assert "SECRET_KEY: ${SECRET_KEY:?" in compose      # 未设置则拒绝启动
     assert '"127.0.0.1:8000:8000"' in compose            # 不直接暴露到公网
+
+
+# ---------- 8. 页面可见范围（共享 vs 私有）----------
+def test_shared_pages_scope(client):
+    """操作历史/回收站/关注/会议是全团队共享；只有私有分组按人隔离。"""
+    login(client)
+    client.post("/users", data={"username": "p1", "password": "p1123456", "role": "planner"})
+    client.post("/users", data={"username": "p2", "password": "p2123456", "role": "planner"})
+    # p1 建专家并操作
+    login(client, "p1", "p1123456")
+    client.post("/expert/save", data={"name": "共享甲", "org": "某院"})
+    import re as _re
+    eid = _re.search(r'/expert/(\d+)"', client.get("/?q=共享甲", follow_redirects=True).text).group(1)
+    client.post(f"/expert/{eid}/focus", data={"level": "core", "note": "p1 标的"})
+    client.post("/groups", data={"name": "p1私有组", "is_public": ""})
+    # p2 能看到 p1 的操作历史和关注分级，但看不到 p1 的私有组
+    login(client, "p2", "p2123456")
+    h = client.get("/history", follow_redirects=True).text
+    assert "共享甲" in h and "p1" in h, "操作历史应对全团队可见"
+    assert "共享甲" in client.get("/focus", follow_redirects=True).text
+    assert "p1私有组" not in client.get("/groups", follow_redirects=True).text
+    # 回收站只给管理员
+    assert client.get("/trash").status_code == 403
+    login(client)
+    assert client.get("/trash").status_code == 200
