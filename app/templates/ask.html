@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><form><input type="hidden" name="role" value="{{role}}">
+<input name="q" value="{{q}}" style="width:600px" placeholder="例：帮我找做 ADC 药物临床研究、参加过我们会议的专家"><button>找专家</button>
+<div class="muted">大模型：{% if llm_on %}已启用{% else %}未配置（设置环境变量 LLM_API_KEY 后启用），当前为关键词匹配{% endif %}</div></form></div>
+{% if parsed %}<div class="card"><b>系统理解：</b>{{parsed.explain}}
+<div class="muted">关键词 {{parsed.keywords}} · 标签 {{parsed.tags}} · 单位 “{{parsed.org}}”</div></div>
+<div class="card"><table><tr><th>#</th><th>专家</th><th>单位 / 职务</th><th>推荐依据</th></tr>
+{% for e, reasons in results %}<tr><td>{{loop.index}}</td><td><a href="/expert/{{e.id}}?role={{role}}">{{e.name}}</a></td>
+<td>{{e.org}} / {{e.title}}</td><td class="reason">{{reasons|join('；')}}</td></tr>
+{% else %}<tr><td colspan="4" class="muted">没有匹配的专家</td></tr>{% endfor %}</table></div>{% endif %}
+{% endblock %}

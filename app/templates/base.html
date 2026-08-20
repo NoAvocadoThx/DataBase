@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>专家智库 MVP</title>
+<style>
+body{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;background:#f6f7f9;color:#222}
+nav{background:#1f2937;color:#fff;padding:10px 24px;display:flex;gap:20px;align-items:center}
+nav a{color:#fff;text-decoration:none}nav .role{margin-left:auto;font-size:13px}
+main{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #eee;font-size:14px}
+.tag{display:inline-block;background:#e0ecff;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:12px;margin:1px}
+input,select,textarea{padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:14px}
+button{padding:6px 14px;background:#2563eb;color:#fff;border:0;border-radius:4px;cursor:pointer}
+.muted{color:#777;font-size:13px}.reason{color:#059669;font-size:13px}
+</style></head><body>
+<nav><b>同写意专家智库 MVP</b>
+<a href="/?role={{role}}">专家列表</a><a href="/ask?role={{role}}">自然语言找专家</a><a href="/import?role={{role}}">Excel 导入</a>
+<span class="role">当前角色：{{role}}
+ <a href="?role=admin">管理员</a> / <a href="?role=planner">策划</a> / <a href="?role=intern">实习生</a></span></nav>
+<main>{% block body %}{% endblock %}</main></body></html>
