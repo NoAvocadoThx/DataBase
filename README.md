@@ -10,8 +10,16 @@ python -m uvicorn app.main:app --reload        # 或双击 run.bat
 ```
 打开 http://127.0.0.1:8000 ，默认账号 **admin / admin123**，登录后点右上角用户名进“我的账户”修改密码。
 
-可选环境变量（见 `.env.example`）：
-- `SECRET_KEY`：会话签名密钥，上线必须改
+`run.bat` 已设好本机开发所需的环境变量。用命令行启动时需要：
+
+```
+set ALLOW_INSECURE_SECRET=1   # 会话密钥每次随机（生产必须改用 .env 里的 SECRET_KEY）
+set SECURE_COOKIE=0           # 本机是 http，不关掉登录不上
+```
+
+环境变量（见 `.env.example`）：
+- `SECRET_KEY`：会话签名密钥，**生产必填**（`openssl rand -hex 32`，至少 32 字符）。缺失或过短会拒绝启动——防止用可预测的密钥被伪造管理员会话
+- `SECURE_COOKIE`：默认 `1`（Cookie 只在 HTTPS 下发送）。仅无 HTTPS 的演示环境设 `0`
 - `LLM_API_KEY` / `LLM_URL` / `LLM_MODEL`：OpenAI 兼容的大模型接口（默认 DeepSeek）。不设则资料抽取走规则、检索走关键词，功能完整可用
 
 ## 功能
@@ -32,9 +40,11 @@ python -m uvicorn app.main:app --reload        # 或双击 run.bat
 
 AI 安全：发送给大模型前，手机 / 邮箱 / 微信号已正则打码；联系方式在本地用规则抽取。AI 结果一律进审核页，不直接写库。
 
+数据保密：三级角色 + 敏感字段脱敏（含"录入原文"）、签名会话 Cookie（HttpOnly/Secure/SameSite，改角色或改密码后旧会话立即失效）、登录限速、导出留痕、软删除回收站、每日备份 700 权限。详见 `DEPLOY.md` 末尾的安全设计说明。
+
 ## 部署到云服务器
 
-见 `DEPLOY.md`（Docker + Caddy 自动 HTTPS，约 10 分钟）。
+见 `DEPLOY.md`：分演示环境（IP + HTTP，只放假数据，10 分钟）和正式环境（域名 + HTTPS，真实数据）两条路径，含上线检查清单和给企业 IT 的安全设计说明。
 
 ## 备份
 
@@ -49,7 +59,11 @@ AI 安全：发送给大模型前，手机 / 邮箱 / 微信号已正则打码�
 ```
 python -m pytest tests -q
 ```
-`tests/test_core.py` 单元测试（导入去重、合并、脱敏、抽取、检索排序），`tests/test_acceptance.py` 端到端验收（登录 → 导入 → 重复合并 → 权限 → 上传 PDF 审核入库 → 自然语言检索 → 导出 → 编辑删除）。
+- `tests/test_core.py` 单元测试（导入去重、合并、脱敏、抽取、检索排序）
+- `tests/test_acceptance.py` 端到端验收（登录 → 导入 → 重复合并 → 权限 → 上传 PDF 审核入库 → 自然语言检索 → 导出 → 编辑删除 → 修改历史/回收站 → 分面筛选 → 表头排序）
+- `tests/test_security.py` 安全回归（伪造会话、越权、脱敏绕过、开放重定向、登录限速、导出审计、大模型脱敏、部署配置）
+
+共 44 项。
 
 ## 目录
 
