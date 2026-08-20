@@ -130,3 +130,37 @@ def test_migrate_adds_missing_columns(tmp_path):
     s = sessionmaker(bind=eng)()
     e = s.query(Expert).one()
     assert e.name == "老数据" and e.source_text is None
+
+
+def test_search_prefilter_matches_full_scan(s):
+    """SQL 粗排 + 精算 的结果，必须与"不截断全量精算"一致（防止提速把正确性弄丢）。"""
+    from app import search
+    rows = [[f"专家{i:03d}", "某院" if i % 2 else "某大学", "教授", "ADC药物" if i % 3 else "疫苗",
+             "", "", "", f"从事{'ADC' if i % 3 else '疫苗'}研究", "肿瘤,ADC" if i % 4 else "疫苗", ""]
+            for i in range(300)]
+    importer.import_excel(s, xlsx(rows), "x.xlsx")
+    for i, e in enumerate(s.query(Expert).limit(120)):
+        if i % 5 == 0:
+            s.add(Participation(expert_id=e.id, meeting="2025大会", year=2025, topic="ADC进展"))
+    s.commit()
+    for q in ["ADC 肿瘤", "参加过我们会议的ADC专家", "疫苗"]:
+        parsed = search.parse_query(q, search.all_tag_names(s))
+        fast = search.search(s, parsed)
+        full = []
+        for e in search.candidates(s, parsed, prefilter=10_000):
+            pts, rs = search.score(e, parsed)
+            if rs and pts > 0:
+                full.append((e, pts, rs))
+        full.sort(key=lambda x: (-x[1], x[0].name))
+        assert [x[0].id for x in fast] == [x[0].id for x in full[:50]], q
+        assert [x[1] for x in fast] == [x[1] for x in full[:50]], q
+
+
+def test_search_prefilter_caps_work(s):
+    """粗排上限生效：不管库多大，进入 Python 精算的条数有上界。"""
+    from app import search
+    importer.import_excel(s, xlsx([[f"甲{i:03d}", "某院", "", "ADC", "", "", "", "", "ADC", ""]
+                                   for i in range(200)]), "x.xlsx")
+    parsed = search.parse_query("ADC", search.all_tag_names(s))
+    assert len(search.candidates(s, parsed, prefilter=30)) == 30
+    assert len(search.search(s, parsed)) == 50  # 返回上限仍是 50

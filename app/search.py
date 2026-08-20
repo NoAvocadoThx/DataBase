@@ -95,31 +95,53 @@ def score(e: Expert, parsed: dict) -> tuple[int, list[str]]:
     return pts, reasons
 
 
-def candidates(s: Session, parsed: dict):
-    """先在数据库里用 LIKE / 标签 / 单位 缩小候选集（任一条件命中即为候选），再到 Python 打分。"""
-    from sqlalchemy import or_
-    from sqlalchemy.orm import selectinload
-    conds = []
+PREFILTER = 1000  # SQL 粗排后进入精算的条数上限（是返回条数的 20 倍，留足余量避免边界并列被截断）
+
+
+def score_sql(parsed: dict):
+    """在 SQL 里算一个"乐观分"用于粗排：权重与 Python score() 一致，但不扣分、不要求
+    其他命中，保证 SQL 分 >= 精算分，粗排不会漏掉本该入选的人。返回 None 表示无条件可用。"""
+    from sqlalchemy import case, func, or_, select
+    from .models import expert_tag
+    terms = []
     for k in parsed.get("keywords", []):
-        if k:
-            like = f"%{k}%"
-            topic_ids = s.query(Participation.expert_id).filter(Participation.topic.like(like))
-            conds += [Expert.field.like(like), Expert.bio.like(like), Expert.title.like(like),
-                      Expert.id.in_(topic_ids)]
+        if not k:
+            continue
+        like = f"%{k}%"
+        hit = or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
+                  Expert.field.like(like), Expert.bio.like(like),
+                  Expert.id.in_(select(Participation.expert_id).where(Participation.topic.like(like))))
+        terms.append(case((hit, 2), else_=0))
     if parsed.get("tags"):
-        from .models import expert_tag
-        tag_ids = s.query(expert_tag.c.expert_id).join(Tag, Tag.id == expert_tag.c.tag_id).filter(Tag.name.in_(parsed["tags"]))
-        conds.append(Expert.id.in_(tag_ids))
+        tag_hits = (select(func.count(expert_tag.c.tag_id))
+                    .select_from(expert_tag.join(Tag, Tag.id == expert_tag.c.tag_id))
+                    .where(expert_tag.c.expert_id == Expert.id, Tag.name.in_(parsed["tags"]))
+                    .scalar_subquery())
+        terms.append(tag_hits * 3)
     if parsed.get("org"):
-        conds.append(Expert.org.like(f"%{parsed['org']}%"))
-    q = live(s.query(Expert)).options(selectinload(Expert.tags), selectinload(Expert.meetings))
-    if conds:
-        q = q.filter(or_(*conds))
-    elif parsed.get("need_meeting"):
-        q = q.filter(Expert.id.in_(s.query(Participation.expert_id)))
-    else:
+        terms.append(case((Expert.org.like(f"%{parsed['org']}%"), 2), else_=0))
+    if parsed.get("need_meeting"):
+        has_meeting = select(func.count(Participation.id)).where(
+            Participation.expert_id == Expert.id).scalar_subquery()
+        terms.append(case((has_meeting > 0, 2), else_=0))
+    if not terms:
+        return None
+    expr = terms[0]
+    for t in terms[1:]:
+        expr = expr + t
+    return expr
+
+
+def candidates(s: Session, parsed: dict, prefilter: int = PREFILTER):
+    """数据库里算分 → 取分最高的 prefilter 条 → 只对这些加载标签和合作记录。
+    以前是把所有"沾边"的人（可能占全库 40%）全捞进内存，一万条以上会明显变慢。"""
+    from sqlalchemy.orm import selectinload
+    expr = score_sql(parsed)
+    if expr is None:
         return []
-    return q.all()
+    return (live(s.query(Expert)).filter(expr > 0)
+            .order_by(expr.desc(), Expert.id).limit(prefilter)
+            .options(selectinload(Expert.tags), selectinload(Expert.meetings)).all())
 
 
 def search(s: Session, parsed: dict, limit: int = 50) -> list[tuple[Expert, int, list[str]]]:
