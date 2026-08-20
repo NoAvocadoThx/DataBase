@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from . import auth, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
 from .models import (Document, DuplicateCandidate, Expert, ExpertGroup, FOCUS_LEVELS, FOCUS_ORDER,
-                     Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR, User, init_db, live,
-                     visible_groups)
+                     MEETING_STATUS, Meeting, Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR,
+                     User, init_db, live, visible_groups)
 
 init_db()
 with SessionLocal() as _s:
@@ -265,6 +265,7 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
         return back("/", "专家不存在")
     return render("detail.html", request, e=view(e, sess["role"]), msg=msg, deleted=e.deleted_at,
                   expert=e, focus_levels=FOCUS_LEVELS, focus_order=FOCUS_ORDER,
+                  meetings=s.query(Meeting).order_by(Meeting.year.desc(), Meeting.name).all(),
                   my_groups=visible_groups(s, sess).all(),
                   all_tags=s.query(Tag).order_by(Tag.name).all(),
                   logs=history.for_expert(s, eid) if auth.can_see_sensitive(sess["role"]) else [],
@@ -443,6 +444,103 @@ def expert_groups(eid: int, request: Request, s: Session = Depends(db), sess=Dep
     return back(request.headers.get("referer", f"/expert/{eid}").split("?")[0] or f"/expert/{eid}")
 
 
+@app.get("/meetings", response_class=HTMLResponse)
+def meetings_page(request: Request, s: Session = Depends(db), sess=Depends(ANY),
+                  view_mode: str = "list", year: str = "", status: str = "", msg: str = ""):
+    from sqlalchemy import func
+    q = s.query(Meeting)
+    if year.isdigit():
+        q = q.filter(Meeting.year == int(year))
+    if status in MEETING_STATUS:
+        q = q.filter(Meeting.status == status)
+    rows = sorted(q.all(), key=lambda m: m.sort_key, reverse=True)
+    counts = dict(s.query(Participation.meeting_id, func.count(Participation.id))
+                  .group_by(Participation.meeting_id).all())
+    years = [y for (y,) in s.query(Meeting.year).distinct().order_by(Meeting.year.desc()) if y]
+    by_year = {}
+    for m in rows:
+        by_year.setdefault(m.year or "未填年份", []).append(m)
+    return render("meetings.html", request, msg=msg, meetings=rows, counts=counts, years=years,
+                  by_year=by_year, statuses=MEETING_STATUS, f=dict(year=year, status=status),
+                  view_mode="calendar" if view_mode == "calendar" else "list")
+
+
+@app.post("/meetings")
+def meeting_create(s: Session = Depends(db), sess=Depends(EDITOR), name: str = Form(...),
+                   year: str = Form(""), start_date: str = Form(""), end_date: str = Form(""),
+                   location: str = Form(""), status: str = Form("planned")):
+    name = name.strip()
+    if not name:
+        return back("/meetings", "会议名称不能为空")
+    m = Meeting(name=name, year=int(year) if year.strip().isdigit() else None,
+                start_date=_date(start_date), end_date=_date(end_date),
+                location=location.strip(), status=status if status in MEETING_STATUS else "planned")
+    if m.start_date and not m.year:
+        m.year = m.start_date.year
+    s.add(m)
+    s.flush()
+    history.log(s, sess["name"], "meeting_new", None, {}, f"新建会议「{name}」",
+                expert_id=None, expert_name="（会议）")
+    s.commit()
+    return back(f"/meetings/{m.id}", f"已创建会议「{name}」")
+
+
+def _date(v: str):
+    from datetime import datetime as _dt
+    try:
+        return _dt.strptime(v.strip(), "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+
+
+@app.get("/meetings/{mid}", response_class=HTMLResponse)
+def meeting_detail(mid: int, request: Request, s: Session = Depends(db), sess=Depends(ANY), msg: str = ""):
+    m = s.get(Meeting, mid)
+    if not m:
+        return back("/meetings", "会议不存在")
+    rows = [(p, view(p.expert, sess["role"])) for p in m.participations if p.expert and not p.expert.deleted_at]
+    rows.sort(key=lambda x: (x[0].role or "zzz", x[1]["name"]))
+    return render("meeting_detail.html", request, m=m, rows=rows, msg=msg, statuses=MEETING_STATUS)
+
+
+@app.post("/meetings/{mid}/edit")
+def meeting_edit(mid: int, s: Session = Depends(db), sess=Depends(EDITOR), name: str = Form(...),
+                 year: str = Form(""), start_date: str = Form(""), end_date: str = Form(""),
+                 location: str = Form(""), status: str = Form(""), note: str = Form("")):
+    m = s.get(Meeting, mid)
+    if not m:
+        return back("/meetings", "会议不存在")
+    before = f"{m.name} {m.year or ''} {m.when} {m.location} {m.status_label}"
+    m.name = name.strip() or m.name
+    m.year = int(year) if year.strip().isdigit() else None
+    m.start_date, m.end_date = _date(start_date), _date(end_date)
+    if m.start_date and not m.year:
+        m.year = m.start_date.year
+    m.location, m.note = location.strip(), note.strip()
+    if status in MEETING_STATUS:
+        m.status = status
+    s.query(Participation).filter_by(meeting_id=m.id).update({"meeting": m.name, "year": m.year})
+    after = f"{m.name} {m.year or ''} {m.when} {m.location} {m.status_label}"
+    if before != after:
+        history.log(s, sess["name"], "meeting_edit", None, {"会议": [before, after]}, "",
+                    expert_id=None, expert_name="（会议）")
+    s.commit()
+    return back(f"/meetings/{mid}", "已保存")
+
+
+@app.post("/meetings/{mid}/delete")
+def meeting_delete(mid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
+    m = s.get(Meeting, mid)
+    if not m:
+        return back("/meetings", "会议不存在")
+    if m.participations:
+        return back(f"/meetings/{mid}", f"还有 {len(m.participations)} 条参会记录，先移除后再删除会议")
+    name = m.name
+    s.delete(m)
+    s.commit()
+    return back("/meetings", f"已删除会议「{name}」")
+
+
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), actor: str = "",
                  action: str = "", name: str = "", date_from: str = "", date_to: str = "", page: int = 1):
@@ -454,14 +552,36 @@ def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR
                   date_to=date_to), params=params, found=found, page=page, pages=pages)
 
 
+def find_or_create_meeting(s: Session, name: str, year, actor: str) -> Meeting:
+    """按 名称+年份 找会议，没有就新建（导入和手工录入共用，避免同名会议散落）。"""
+    name = (name or "").strip()
+    if not name:
+        return None
+    m = s.query(Meeting).filter_by(name=name, year=year).first()
+    if not m:
+        m = Meeting(name=name, year=year, status="done")
+        s.add(m)
+        s.flush()
+        history.log(s, actor, "meeting_new", None, {}, f"新建会议「{name}」{year or ''}",
+                    expert_id=None, expert_name="（会议）")
+    return m
+
+
 @app.post("/expert/{eid}/meeting")
-def add_meeting(eid: int, s: Session = Depends(db), sess=Depends(EDITOR), meeting: str = Form(...),
-                year: str = Form(""), mrole: str = Form(""), topic: str = Form("")):
-    m = Participation(expert_id=eid, meeting=meeting.strip(), role=mrole.strip(), topic=topic.strip(),
-                      year=int(year) if year.strip().isdigit() else None)
-    s.add(m)
+def add_meeting(eid: int, s: Session = Depends(db), sess=Depends(EDITOR), meeting: str = Form(""),
+                meeting_id: str = Form(""), year: str = Form(""), mrole: str = Form(""), topic: str = Form("")):
+    yr = int(year) if year.strip().isdigit() else None
+    if meeting_id.isdigit():
+        mt = s.get(Meeting, int(meeting_id))
+    else:
+        mt = find_or_create_meeting(s, meeting, yr, sess["name"])
+    if not mt:
+        return back(f"/expert/{eid}", "请选择或填写会议名称")
+    p = Participation(expert_id=eid, meeting_id=mt.id, meeting=mt.name, year=mt.year,
+                      role=mrole.strip(), topic=topic.strip())
+    s.add(p)
     history.log(s, sess["name"], "meeting_add", s.get(Expert, eid),
-                {"会议": m.meeting, "年份": m.year, "角色": m.role, "主题": m.topic})
+                {"会议": mt.name, "年份": mt.year, "角色": p.role, "主题": p.topic})
     s.commit()
     return back(f"/expert/{eid}")
 
@@ -471,7 +591,7 @@ def del_meeting(mid: int, s: Session = Depends(db), sess=Depends(EDITOR)):
     m = s.get(Participation, mid)
     eid = m.expert_id
     history.log(s, sess["name"], "meeting_del", m.expert,
-                {"会议": m.meeting, "年份": m.year, "角色": m.role, "主题": m.topic})
+                {"会议": m.meeting_name, "年份": m.year, "角色": m.role, "主题": m.topic})
     s.delete(m)
     s.commit()
     return back(f"/expert/{eid}")
@@ -579,11 +699,12 @@ async def approve_doc(did: int, request: Request, s: Session = Depends(db), sess
         d["tags"] = tags or None
         e, _ = importer.upsert_expert(s, d, doc.filename, sess["name"], "approve")
         if meeting:
-            m = Participation(expert_id=e.id, meeting=meeting, topic=d.get("topic", "").strip(),
-                              year=int(year) if year.isdigit() else None, role=form.get(f"role_{i}", "").strip())
+            mt = find_or_create_meeting(s, meeting, int(year) if year.isdigit() else None, sess["name"])
+            m = Participation(expert_id=e.id, meeting_id=mt.id, meeting=mt.name, year=mt.year,
+                              topic=d.get("topic", "").strip(), role=form.get(f"role_{i}", "").strip())
             s.add(m)
             history.log(s, sess["name"], "meeting_add", e,
-                        {"会议": meeting, "年份": m.year, "角色": m.role, "主题": m.topic}, f"来源: {doc.filename}")
+                        {"会议": mt.name, "年份": mt.year, "角色": m.role, "主题": m.topic}, f"来源: {doc.filename}")
         n += 1
     doc.status = "reviewed"
     s.commit()

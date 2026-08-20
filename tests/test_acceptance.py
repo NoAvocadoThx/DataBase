@@ -349,3 +349,64 @@ def test_14_groups(client):
     assert client.post("/groups", data={"name": "x"}).status_code == 403
     assert client.post(f"/expert/{eid}/groups", data={"gid": gid}).status_code == 403
     assert client.post(f"/expert/{eid}/focus", data={"level": "core"}).status_code == 403
+
+
+def test_15_meetings(client):
+    login(client, "admin", "admin123")
+    # 建会议
+    r = client.post("/meetings", data={"name": "2026 同写意年度大会", "start_date": "2026-05-18",
+                                       "end_date": "2026-05-20", "location": "上海", "status": "planned"})
+    mid = re.search(r"/meetings/(\d+)", r.headers["location"]).group(1)
+    h = page(client, f"/meetings/{mid}")
+    assert "2026 同写意年度大会" in h and "上海" in h and "筹备中" in h and "2026-05-18" in h
+    # 只填日期时年份自动推导
+    assert "2026" in page(client, "/meetings")
+    # 挂专家
+    client.post("/expert/save", data={"name": "会议甲", "org": "某院"})
+    eid = re.search(r'/expert/(\d+)"', page(client, "/?q=会议甲")).group(1)
+    client.post(f"/expert/{eid}/meeting", data={"meeting_id": mid, "mrole": "主席", "topic": "开幕报告"})
+    h = page(client, f"/meetings/{mid}")
+    assert "会议甲" in h and "主席" in h and "开幕报告" in h and "1 位" in h
+    d = page(client, f"/expert/{eid}")
+    assert f'href="/meetings/{mid}"' in d and "2026 同写意年度大会" in d   # 详情页会议名可点
+    # 改会议名 → 合作记录同步
+    client.post(f"/meetings/{mid}/edit", data={"name": "2026 年度大会（改名）", "year": "2026",
+                                               "start_date": "2026-05-18", "end_date": "", "location": "北京",
+                                               "status": "confirmed", "note": "场地已定"})
+    assert "2026 年度大会（改名）" in page(client, f"/expert/{eid}")
+    assert "已确定" in page(client, f"/meetings/{mid}") and "北京" in page(client, f"/meetings/{mid}")
+    # 同名会议不重复建
+    client.post(f"/expert/{eid}/meeting", data={"meeting": "2026 年度大会（改名）", "year": "2026", "mrole": "嘉宾"})
+    from app import models
+    with models.SessionLocal() as s:
+        assert s.query(models.Meeting).filter_by(name="2026 年度大会（改名）", year=2026).count() == 1
+    # 有参会记录时不能删
+    r = client.post(f"/meetings/{mid}/delete")
+    assert "%E5%85%88%E7%A7%BB%E9%99%A4" in r.headers["location"]        # 先移除
+    # 年份视图 + 筛选
+    assert "2026" in page(client, "/meetings?view_mode=calendar")
+    assert "没有符合条件的会议" in page(client, "/meetings?status=cancelled")
+    # 实习生只读
+    login(client, "admin", "admin123")
+    client.post("/users", data={"username": "kid4", "password": "kid123456", "role": "intern"})
+    login(client, "kid4", "kid123456")
+    assert "2026 年度大会（改名）" in page(client, "/meetings") and "新建会议" not in page(client, "/meetings")
+    assert client.post("/meetings", data={"name": "x"}).status_code == 403
+    assert client.post(f"/meetings/{mid}/edit", data={"name": "y"}).status_code == 403
+
+
+def test_16_legacy_meeting_strings_migrated(client):
+    """老数据（会议只是字符串）在启动迁移后应挂上会议实体。"""
+    from app import models
+    login(client, "admin", "admin123")
+    with models.SessionLocal() as s:
+        e = models.Expert(name="老数据专家", org="某院")
+        s.add(e); s.flush()
+        s.add(models.Participation(expert_id=e.id, meeting="2019 老会议", year=2019))  # 无 meeting_id
+        s.commit(); eid = e.id
+        assert s.query(models.Participation).filter_by(expert_id=eid).one().meeting_id is None
+        models._link_meetings(s.get_bind())
+        p = s.query(models.Participation).filter_by(expert_id=eid).one()
+        s.refresh(p)
+        assert p.meeting_id and p.meeting_obj.name == "2019 老会议" and p.meeting_obj.year == 2019
+    assert "2019 老会议" in page(client, f"/expert/{eid}")

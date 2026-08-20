@@ -46,12 +46,15 @@
 
 <div class="card"><h3>合作历史 <span class="muted">{{e.meetings|length}} 次</span></h3>
 <table><tr><th>会议</th><th>年份</th><th>角色</th><th>报告主题</th><th></th></tr>
-{% for m in e.meetings %}<tr><td>{{m.meeting}}</td><td class="mono">{{m.year or ''}}</td><td>{{m.role}}</td><td>{{m.topic}}</td>
+{% for m in e.meetings %}<tr><td>{% if m.meeting_id %}<a href="/meetings/{{m.meeting_id}}">{{m.meeting_name}}</a>{% else %}{{m.meeting_name}}{% endif %}</td><td class="mono">{{m.year or ''}}</td><td>{{m.role}}</td><td>{{m.topic}}</td>
 <td style="text-align:right">{% if sess.role in ['admin','planner'] %}<form method="post" action="/meeting/{{m.id}}/delete" onsubmit="return confirm('删除这条合作记录？（操作历史里会保留）')"><button class="ghost">删除</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">暂无合作记录</td></tr>{% endfor %}</table>
 {% if sess.role in ['admin','planner'] and not deleted %}<form method="post" action="/expert/{{e.id}}/meeting" class="row" style="margin-top:12px">
-<input name="meeting" placeholder="会议名称" required><input name="year" placeholder="年份" style="width:80px">
-<input name="mrole" placeholder="角色（主席 / 报告人）"><input name="topic" placeholder="报告主题" style="width:240px"><button class="ghost">添加合作记录</button></form>{% endif %}</div>
+<select name="meeting_id" style="width:280px"><option value="">选择已有会议…</option>
+{% for mt in meetings %}<option value="{{mt.id}}">{{mt.name}}{% if mt.year %}（{{mt.year}}）{% endif %}</option>{% endfor %}</select>
+<span class="muted">或新建：</span><input name="meeting" placeholder="会议名称" style="width:180px"><input name="year" placeholder="年份" style="width:80px">
+<input name="mrole" placeholder="角色（主席 / 报告人）" style="width:150px"><input name="topic" placeholder="报告主题" style="width:200px"><button class="ghost">添加合作记录</button></form>
+<p class="muted" style="margin:8px 0 0">优先从下拉里选，避免同一场会议出现多个名字。<a href="/meetings">管理会议</a></p>{% endif %}</div>
 
 {% if can_sensitive %}<div class="card"><h3>修改历史</h3><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>
 {% with show_expert=false %}{% include "_log_rows.html" %}{% endwith %}</table></div>{% endif %}

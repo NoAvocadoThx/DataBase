@@ -13,7 +13,8 @@ LABELS = {"name": "姓名", "org": "单位", "title": "职务", "field": "研究
 ACTIONS = {"create": "新建", "update": "修改", "delete": "删除", "restore": "恢复", "purge": "彻底删除",
            "merge": "合并", "import": "Excel导入", "approve": "审核入库", "meeting_add": "添加合作记录",
            "meeting_del": "删除合作记录", "export": "导出全库",
-           "focus": "调整关注分级", "group_add": "加入分组", "group_del": "移出分组"}
+           "focus": "调整关注分级", "group_add": "加入分组", "group_del": "移出分组",
+           "meeting_new": "新建会议", "meeting_edit": "修改会议"}
 
 
 class ChangeLog(Base):

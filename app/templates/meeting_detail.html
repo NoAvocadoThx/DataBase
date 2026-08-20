@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block body %}
+<div class="card namecard">
+<div><div class="nm" style="font-size:1.6rem">{{m.name}}</div>
+<div class="kv" style="grid-template-columns:repeat(4,1fr);margin-top:14px">
+<div><b>时间</b><span class="mono">{{m.when or '—'}}</span></div>
+<div><b>地点</b>{{m.location or '—'}}</div>
+<div><b>状态</b><span class="tag {% if m.status=='done' %}ok{% elif m.status=='cancelled' %}bad{% else %}warn{% endif %}">{{m.status_label}}</span></div>
+<div><b>参会专家</b>{{rows|length}} 位</div></div>
+{% if m.note %}<p class="muted" style="margin:14px 0 0">{{m.note}}</p>{% endif %}</div>
+<div class="side"><a class="btn ghost" href="/meetings">返回会议列表</a></div></div>
+
+<div class="card flush"><table><tr><th>姓名</th><th>单位</th><th>职务</th><th>角色</th><th>报告主题</th><th>关注</th></tr>
+{% for p, e in rows %}<tr><td><a class="name" href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
+<td>{{p.role or '—'}}</td><td>{{p.topic or '—'}}</td>
+<td>{% if e.focus_level %}<span class="focus {{e.focus_level}}">{{e.focus_label}}</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="muted" style="padding:28px;text-align:center">还没有专家关联到这场会议。在专家详情页的「合作历史」里选择这场会议即可。</td></tr>{% endfor %}</table></div>
+
+{% if sess.role in ['admin','planner'] %}
+<div class="card"><h3>会议信息</h3><form method="post" action="/meetings/{{m.id}}/edit" class="grid">
+<div><label>会议名称</label><input name="name" value="{{m.name}}" required class="w"></div>
+<div><label>地点</label><input name="location" value="{{m.location}}" class="w"></div>
+<div><label>开始日期</label><input name="start_date" type="date" value="{{m.start_date or ''}}" class="w"></div>
+<div><label>结束日期</label><input name="end_date" type="date" value="{{m.end_date or ''}}" class="w"></div>
+<div><label>年份（无具体日期时用）</label><input name="year" value="{{m.year or ''}}" class="w"></div>
+<div><label>状态</label><select name="status" class="w">{% for k, v in statuses.items() %}<option value="{{k}}" {% if m.status==k %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
+<div class="full"><label>备注</label><textarea name="note" rows="2">{{m.note or ''}}</textarea></div>
+<div class="full"><button>保存</button> <span class="muted">改名后，所有关联的合作记录会同步更新</span></div></form></div>
+{% endif %}
+{% if sess.role == 'admin' and not rows %}
+<form method="post" action="/meetings/{{m.id}}/delete" onsubmit="return confirm('删除会议「{{m.name}}」？')"><button class="danger">删除会议</button></form>
+{% endif %}
+{% endblock %}
