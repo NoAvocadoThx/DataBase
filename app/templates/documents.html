@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h3>上传资料（会议议程 / 嘉宾名单 / 简历）</h3>
+<form method="post" enctype="multipart/form-data"><input type="file" name="file" accept=".pdf,.docx,.pptx,.txt" required> <button>上传并提取</button></form>
+<p class="muted">AI 抽取：{% if llm_on %}大模型已启用（敏感信息打码后发送）{% else %}未配置大模型（环境变量 LLM_API_KEY），使用规则抽取{% endif %}。提取结果需人工审核后才入库。</p></div>
+<div class="card"><table><tr><th>文件</th><th>上传人</th><th>时间</th><th>状态</th><th></th></tr>
+{% for d in docs %}<tr><td><a href="/documents/{{d.id}}">{{d.filename}}</a></td><td>{{d.uploaded_by}}</td><td>{{d.created_at.strftime('%m-%d %H:%M')}}</td>
+<td>{{ '待审核' if d.status=='pending' else '已入库' }}</td>
+<td>{% if sess.role=='admin' %}<form method="post" action="/documents/{{d.id}}/delete"><button class="ghost">删</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">暂无</td></tr>{% endfor %}</table></div>
+{% endblock %}

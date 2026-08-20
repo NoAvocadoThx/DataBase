@@ -1,18 +1,24 @@
-<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>专家智库 MVP</title>
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>专家智库</title>
 <style>
 body{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;background:#f6f7f9;color:#222}
-nav{background:#1f2937;color:#fff;padding:10px 24px;display:flex;gap:20px;align-items:center}
-nav a{color:#fff;text-decoration:none}nav .role{margin-left:auto;font-size:13px}
+nav{background:#1f2937;color:#fff;padding:10px 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+nav a{color:#fff;text-decoration:none}nav a.badge{background:#f59e0b;color:#111;border-radius:10px;padding:0 8px;font-size:12px;margin-left:-10px}
+nav .me{margin-left:auto;font-size:13px;color:#cbd5e1}
 main{max-width:1100px;margin:24px auto;padding:0 16px}
 .card{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #eee;font-size:14px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #eee;font-size:14px;vertical-align:top}
 .tag{display:inline-block;background:#e0ecff;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:12px;margin:1px}
-input,select,textarea{padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:14px}
-button{padding:6px 14px;background:#2563eb;color:#fff;border:0;border-radius:4px;cursor:pointer}
-.muted{color:#777;font-size:13px}.reason{color:#059669;font-size:13px}
+input,select,textarea{padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:14px;box-sizing:border-box}
+textarea{width:100%}label{font-size:13px;color:#555}
+button,.btn{padding:6px 14px;background:#2563eb;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px;text-decoration:none;display:inline-block}
+button.danger{background:#dc2626}button.ghost,.btn.ghost{background:#e5e7eb;color:#111}
+.muted{color:#777;font-size:13px}.reason{color:#059669;font-size:13px}.msg{background:#fef3c7;border-left:4px solid #f59e0b;padding:8px 12px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}.grid .full{grid-column:1/-1}
+.src{background:#f3f4f6;border-radius:4px;padding:6px 8px;font-size:12px;color:#444;white-space:pre-wrap}
 </style></head><body>
-<nav><b>同写意专家智库 MVP</b>
-<a href="/?role={{role}}">专家列表</a><a href="/ask?role={{role}}">自然语言找专家</a><a href="/import?role={{role}}">Excel 导入</a>
-<span class="role">当前角色：{{role}}
- <a href="?role=admin">管理员</a> / <a href="?role=planner">策划</a> / <a href="?role=intern">实习生</a></span></nav>
-<main>{% block body %}{% endblock %}</main></body></html>
+{% if sess %}<nav><b>同写意专家智库</b>
+<a href="/">专家列表</a><a href="/ask">找专家</a>
+{% if sess.role in ['admin','planner'] %}<a href="/documents">资料录入</a>{% if pending_docs %}<a class="badge" href="/documents">{{pending_docs}}</a>{% endif %}{% endif %}
+{% if sess.role=='admin' %}<a href="/import">Excel 导入</a><a href="/export">导出</a><a href="/duplicates">疑似重复</a>{% if pending_dup %}<a class="badge" href="/duplicates">{{pending_dup}}</a>{% endif %}<a href="/users">用户</a>{% endif %}
+<span class="me">{{sess.name}}（{{ {'admin':'管理员','planner':'策划','intern':'实习生'}[sess.role] }}） <a href="/logout">退出</a></span></nav>{% endif %}
+<main>{% if msg %}<div class="msg">{{msg}}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>

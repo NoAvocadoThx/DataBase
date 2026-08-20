@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h3>用户管理</h3><table><tr><th>用户名</th><th>姓名</th><th>角色</th><th></th></tr>
+{% for u in users %}<tr><td>{{u.username}}</td><td>{{u.display_name}}</td><td>{{u.role}}</td>
+<td>{% if u.id!=sess.uid %}<form method="post" action="/users/{{u.id}}/delete"><button class="ghost">删</button></form>{% endif %}</td></tr>{% endfor %}</table>
+<form method="post" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap"><input name="username" placeholder="用户名" required><input name="display_name" placeholder="姓名">
+<input name="password" type="password" placeholder="初始密码" required minlength="6"><select name="role">{% for r in roles %}<option>{{r}}</option>{% endfor %}</select><button>创建用户</button></form>
+<p class="muted">admin：全部权限；planner：录入/编辑/看敏感信息；intern：只读且手机/邮箱/微信/备注脱敏。</p></div>
+{% endblock %}

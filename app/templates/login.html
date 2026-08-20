@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block body %}
+<div class="card" style="max-width:360px;margin:80px auto"><h2>登录专家智库</h2>
+<form method="post"><input type="hidden" name="next" value="{{next}}">
+<p><input name="username" placeholder="用户名" required style="width:100%"></p>
+<p><input name="password" type="password" placeholder="密码" required style="width:100%"></p>
+<button style="width:100%">登录</button></form>
+<p class="muted">首次使用：admin / admin123，登录后请立即修改密码。</p></div>
+{% endblock %}

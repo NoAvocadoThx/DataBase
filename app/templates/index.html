@@ -1,12 +1,15 @@
 {% extends "base.html" %}{% block body %}
-<div class="card"><form>
-<input type="hidden" name="role" value="{{role}}">
-<input name="q" value="{{q}}" placeholder="姓名/单位/方向关键词" style="width:260px">
+<div class="card"><form style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+<input name="q" value="{{q}}" placeholder="姓名/单位/职务/方向关键词" style="width:260px">
 <input name="org" value="{{org}}" placeholder="单位">
 <select name="tag"><option value="">全部标签</option>{% for t in tags %}<option {% if t.name==tag %}selected{% endif %}>{{t.name}}</option>{% endfor %}</select>
-<button>筛选</button> <span class="muted">共 {{total}} 位专家，当前 {{experts|length}} 位</span></form></div>
-<div class="card"><table><tr><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>标签</th><th>手机</th></tr>
-{% for e in experts %}<tr><td><a href="/expert/{{e.id}}?role={{role}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
-<td>{{e.field}}</td><td>{% for t in e.tags %}<span class="tag">{{t.name}}</span>{% endfor %}</td><td>{{e.phone}}</td></tr>
-{% else %}<tr><td colspan="6" class="muted">暂无数据，请先 <a href="/import?role=admin">导入 Excel</a></td></tr>{% endfor %}</table></div>
+<button>筛选</button> <a class="btn ghost" href="/">清除</a>
+<span class="muted">共 {{total}} 位，当前 {{experts|length}} 位</span>
+{% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new" style="margin-left:auto">+ 新增专家</a>{% endif %}</form></div>
+<div class="card"><table><tr><th>姓名</th><th>单位</th><th>职务</th><th>研究方向</th><th>标签</th><th>手机</th><th>合作</th></tr>
+{% for e in experts %}<tr><td><a href="/expert/{{e.id}}">{{e.name}}</a></td><td>{{e.org}}</td><td>{{e.title}}</td>
+<td>{{e.field}}</td><td>{% for t in e.tags %}<span class="tag">{{t.name}}</span>{% endfor %}</td><td>{{e.phone}}</td><td>{{e.meetings|length}} 次</td></tr>
+{% else %}<tr><td colspan="7" class="muted">暂无数据</td></tr>{% endfor %}</table></div>
+<div class="card"><details><summary class="muted">修改我的密码</summary><form method="post" action="/password" style="margin-top:8px">
+<input name="old" type="password" placeholder="原密码" required> <input name="new" type="password" placeholder="新密码" required minlength="6"> <button>修改</button></form></details></div>
 {% endblock %}

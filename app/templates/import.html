@@ -1,7 +1,5 @@
 {% extends "base.html" %}{% block body %}
-<div class="card"><h3>Excel 批量导入（仅管理员）</h3>
-{% if result %}<p style="color:#b45309">{{result}}</p>{% endif %}
-<form method="post" enctype="multipart/form-data"><input type="hidden" name="role" value="{{role}}">
-<input type="file" name="file" accept=".xlsx" required> <button>导入</button></form>
-<p class="muted">第一行为列名，支持的列：{{cols|join(' / ')}}。去重规则：姓名+单位相同则更新，仅同名则新建并计入“疑似重复”。</p></div>
+<div class="card"><h3>Excel 批量导入</h3>
+<form method="post" enctype="multipart/form-data"><input type="file" name="file" accept=".xlsx" required> <button>导入</button></form>
+<p class="muted">第一行为列名，支持的列：{{cols|join(' / ')}}。<br>去重规则：姓名+单位相同 → 更新已有记录；仅同名 → 新建并进入“疑似重复”待处理。</p></div>
 {% endblock %}
