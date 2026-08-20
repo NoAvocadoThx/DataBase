@@ -1,7 +1,7 @@
 """生成 N 条假专家数据用于压测/演示（默认 10000）。用法: python scripts/seed_demo.py [N] [--db path]
 全部为随机拼接的虚构信息。"""
 import os, random, sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if "--db" in sys.argv:
@@ -9,7 +9,7 @@ if "--db" in sys.argv:
 
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app import history  # noqa: E402,F401
-from app.models import Expert, Participation, Tag, engine, expert_tag, init_db  # noqa: E402
+from app.models import Expert, Meeting, Participation, Tag, engine, expert_tag, init_db  # noqa: E402
 
 N = int(next((a for a in sys.argv[1:] if a.isdigit()), 10000))
 random.seed(42)
@@ -36,6 +36,27 @@ for t in TAGS:
     tags[t] = obj
 s.flush()
 
+# 会议：每个主题每年一场，带真实起止日期；今年之后的排成"筹备中/已确定"
+CITY_MEET = ["北京", "上海", "苏州", "广州", "杭州", "成都"]
+meetings = []
+today = datetime.now().date()
+for name in MEET:
+    for yr in range(2019, today.year + 2):
+        start = date(yr, random.randint(3, 11), random.randint(1, 27))
+        end = start + timedelta(days=random.choice((0, 1, 2)))
+        if end < today:
+            st = "done"
+        elif start > today + timedelta(days=120):
+            st = "planned"
+        else:
+            st = "confirmed"
+        m = Meeting(name=f"{name}", year=yr, start_date=start, end_date=end,
+                    location=random.choice(CITY_MEET), status=st)
+        s.add(m)
+        meetings.append(m)
+s.flush()
+print(f"会议 {len(meetings)} 场（含 {sum(1 for m in meetings if m.start_date >= today)} 场未来会议）")
+
 now = datetime.now()
 batch = []
 for i in range(N):
@@ -51,7 +72,8 @@ for i in range(N):
                updated_at=now - timedelta(days=random.randint(0, 900)))
     e.tags = [tags[t] for t in random.sample(TAGS, random.choice((1, 2, 3, 4)))]
     for _ in range(random.choice((0, 0, 0, 1, 1, 2, 3))):
-        e.meetings.append(Participation(meeting=random.choice(MEET), year=random.randint(2019, 2026),
+        mt = random.choice(meetings)
+        e.meetings.append(Participation(meeting_id=mt.id, meeting=mt.name, year=mt.year,
                                         role=random.choice(ROLE), topic=random.choice(fields) + "进展"))
     batch.append(e)
     if len(batch) >= 500:

@@ -113,6 +113,26 @@ class Meeting(Base):
         from datetime import date
         return self.start_date or (date(self.year, 1, 1) if self.year else date(1900, 1, 1))
 
+    @property
+    def last_day(self):
+        return self.end_date or self.start_date
+
+    @property
+    def is_upcoming(self) -> bool:
+        """未来或正在进行的会议（按结束日期算，进行中的也算"将来"）。无日期时按状态判断。"""
+        from datetime import date
+        if self.last_day:
+            return self.last_day >= date.today() and self.status != "cancelled"
+        return self.status in ("planned", "confirmed")
+
+    @property
+    def days_away(self):
+        from datetime import date
+        return (self.start_date - date.today()).days if self.start_date else None
+
+    def covers(self, d) -> bool:
+        return bool(self.start_date and self.start_date <= d <= (self.end_date or self.start_date))
+
 
 class Participation(Base):
     __tablename__ = "participation"

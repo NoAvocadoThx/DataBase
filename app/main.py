@@ -446,8 +446,11 @@ def expert_groups(eid: int, request: Request, s: Session = Depends(db), sess=Dep
 
 @app.get("/meetings", response_class=HTMLResponse)
 def meetings_page(request: Request, s: Session = Depends(db), sess=Depends(ANY),
-                  view_mode: str = "list", year: str = "", status: str = "", msg: str = ""):
+                  view_mode: str = "list", month: str = "", year: str = "", status: str = "", msg: str = ""):
+    from calendar import Calendar
+    from datetime import date, timedelta
     from sqlalchemy import func
+    view_mode = view_mode if view_mode in ("list", "month", "year") else "list"
     q = s.query(Meeting)
     if year.isdigit():
         q = q.filter(Meeting.year == int(year))
@@ -457,12 +460,44 @@ def meetings_page(request: Request, s: Session = Depends(db), sess=Depends(ANY),
     counts = dict(s.query(Participation.meeting_id, func.count(Participation.id))
                   .group_by(Participation.meeting_id).all())
     years = [y for (y,) in s.query(Meeting.year).distinct().order_by(Meeting.year.desc()) if y]
-    by_year = {}
-    for m in rows:
-        by_year.setdefault(m.year or "未填年份", []).append(m)
-    return render("meetings.html", request, msg=msg, meetings=rows, counts=counts, years=years,
-                  by_year=by_year, statuses=MEETING_STATUS, f=dict(year=year, status=status),
-                  view_mode="calendar" if view_mode == "calendar" else "list")
+    today = date.today()
+    ctx = dict(meetings=rows, counts=counts, years=years, statuses=MEETING_STATUS,
+               f=dict(year=year, status=status), view_mode=view_mode, today=today)
+
+    if view_mode == "list":
+        upcoming = sorted([m for m in rows if m.is_upcoming], key=lambda m: m.sort_key)
+        ctx.update(upcoming=upcoming, past=[m for m in rows if not m.is_upcoming])
+
+    elif view_mode == "month":
+        try:
+            y, mo = (int(x) for x in month.split("-"))
+            cur = date(y, mo, 1)
+        except (ValueError, AttributeError):
+            cur = today.replace(day=1)
+        weeks = Calendar(firstweekday=0).monthdatescalendar(cur.year, cur.month)
+        dated = [m for m in rows if m.start_date]
+        grid = [[(d, [m for m in dated if m.covers(d)]) for d in wk] for wk in weeks]
+        prev = (cur - timedelta(days=1)).replace(day=1)
+        nxt = (cur.replace(day=28) + timedelta(days=7)).replace(day=1)
+        in_month = sorted([m for m in dated if m.start_date.year == cur.year
+                           and m.start_date.month == cur.month], key=lambda m: m.sort_key)
+        nearest = None
+        if not in_month and dated:  # 当月没会议时，指路到最近的有会议的月份
+            after = sorted([m for m in dated if m.start_date >= cur], key=lambda m: m.start_date)
+            before = sorted([m for m in dated if m.start_date < cur], key=lambda m: m.start_date, reverse=True)
+            pick = after[0] if after else (before[0] if before else None)
+            if pick:
+                nearest = (f"{pick.start_date:%Y-%m}", f"{pick.start_date:%Y 年 %-m 月}".replace(" 0", " ")
+                           if os.name != "nt" else f"{pick.start_date.year} 年 {pick.start_date.month} 月", pick)
+        ctx.update(grid=grid, cur=cur, prev=f"{prev:%Y-%m}", next=f"{nxt:%Y-%m}",
+                   undated=[m for m in rows if not m.start_date], in_month=in_month, nearest=nearest)
+
+    else:  # year
+        by_year = {}
+        for m in rows:
+            by_year.setdefault(m.year or "未填年份", []).append(m)
+        ctx.update(by_year=by_year)
+    return render("meetings.html", request, msg=msg, **ctx)
 
 
 @app.post("/meetings")

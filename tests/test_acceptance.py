@@ -410,3 +410,36 @@ def test_16_legacy_meeting_strings_migrated(client):
         s.refresh(p)
         assert p.meeting_id and p.meeting_obj.name == "2019 老会议" and p.meeting_obj.year == 2019
     assert "2019 老会议" in page(client, f"/expert/{eid}")
+
+
+def test_17_month_calendar_and_upcoming(client):
+    from datetime import date, timedelta
+    login(client, "admin", "admin123")
+    today = date.today()
+    soon, past_d = today + timedelta(days=10), today - timedelta(days=40)
+    client.post("/meetings", data={"name": "未来大会", "start_date": str(soon),
+                                   "end_date": str(soon + timedelta(days=2)), "location": "上海", "status": "confirmed"})
+    client.post("/meetings", data={"name": "往年大会", "start_date": str(past_d), "location": "北京", "status": "done"})
+    client.post("/meetings", data={"name": "只有年份的会", "year": "2018", "status": "done"})
+    # 列表视图：将来的单独一栏并有倒计时
+    h = page(client, "/meetings")
+    assert "即将举行" in h and "未来大会" in h and "10 天后" in h
+    up, pa = h.index("即将举行"), h.index('已举办 <span')  # 用小标题定位，状态下拉里也有"已举办"
+    assert up < pa and h.index("未来大会") < pa and h.index("往年大会") > pa
+    # 月历：当月网格 + 今天高亮
+    h = page(client, "/meetings?view_mode=month")
+    assert 'class="cal"' in h and "今天" in h and f"{today.year} 年 {today.month} 月" in h
+    # 跨天会议在每一天都出现
+    h = page(client, f"/meetings?view_mode=month&month={soon:%Y-%m}")
+    assert h.count(">未来大会</a>") >= 3
+    assert "只有年份的会" in h and "未排期" in h          # 无日期的不丢
+    # 上/下月导航
+    nxt = (today.replace(day=28) + timedelta(days=7))
+    assert f'month={nxt:%Y-%m}' in page(client, "/meetings?view_mode=month")
+    # 当月没会议时给出跳转提示
+    empty = f"{today.year + 5}-01"
+    h = page(client, f"/meetings?view_mode=month&month={empty}")
+    assert "没有排期的会议" in h and "跳到" in h
+    # 三种视图切换都在
+    for mode in ("list", "month", "year"):
+        assert f"view_mode={mode}" in page(client, "/meetings")

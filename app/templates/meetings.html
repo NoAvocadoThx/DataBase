@@ -1,33 +1,73 @@
-{% extends "base.html" %}{% block body %}
-<div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">会议日历</h2>
-<div class="row">
-<a class="btn {{'' if view_mode=='list' else 'ghost'}}" href="?view_mode=list{% if f.year %}&year={{f.year}}{% endif %}{% if f.status %}&status={{f.status}}{% endif %}">列表</a>
-<a class="btn {{'' if view_mode=='calendar' else 'ghost'}}" href="?view_mode=calendar{% if f.status %}&status={{f.status}}{% endif %}">按年份</a></div></div>
-
-<div class="card"><form class="row">
-<input type="hidden" name="view_mode" value="{{view_mode}}">
-<select name="year"><option value="">年份：全部</option>{% for y in years %}<option value="{{y}}" {% if f.year == y|string %}selected{% endif %}>{{y}}</option>{% endfor %}</select>
-<select name="status"><option value="">状态：全部</option>{% for k, v in statuses.items() %}<option value="{{k}}" {% if f.status == k %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
-<button>筛选</button><a class="btn ghost" href="/meetings">清除</a>
-<span class="muted">共 {{meetings|length}} 场</span></form></div>
-
+{% extends "base.html" %}{% block mainclass %}{{ 'wide' if view_mode == 'month' }}{% endblock %}{% block body %}
 {% macro status_tag(m) -%}
 <span class="tag {% if m.status=='done' %}ok{% elif m.status=='cancelled' %}bad{% else %}warn{% endif %}">{{m.status_label}}</span>
 {%- endmacro %}
+{% macro qs(mode) -%}?view_mode={{mode}}{% if f.status %}&status={{f.status}}{% endif %}{% if f.year and mode != 'month' %}&year={{f.year}}{% endif %}{%- endmacro %}
 
-{% if view_mode == 'calendar' %}
-{% for y, rows in by_year.items() %}
-<div class="card"><h3 style="margin-bottom:10px">{{y}} <span class="muted" style="font-weight:400">{{rows|length}} 场</span></h3>
-<table>{% for m in rows %}<tr><td class="mono" style="width:130px">{{m.when}}</td>
-<td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td><td>{{m.location}}</td>
-<td style="width:80px">{{status_tag(m)}}</td><td class="num" style="width:90px">{{counts.get(m.id, 0)}} 位专家</td></tr>{% endfor %}</table></div>
-{% else %}<div class="card muted" style="text-align:center;padding:32px">没有符合条件的会议</div>{% endfor %}
+<div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">会议日历</h2>
+<div class="row" style="gap:4px">
+<a class="btn {{'' if view_mode=='list' else 'ghost'}}" href="{{qs('list')}}">列表</a>
+<a class="btn {{'' if view_mode=='month' else 'ghost'}}" href="{{qs('month')}}">月历</a>
+<a class="btn {{'' if view_mode=='year' else 'ghost'}}" href="{{qs('year')}}">按年份</a></div></div>
 
-{% else %}
-<div class="card flush"><table><tr><th>时间</th><th>会议</th><th>地点</th><th>状态</th><th class="num">参会专家</th></tr>
-{% for m in meetings %}<tr><td class="mono">{{m.when}}</td><td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td>
+<div class="card"><form class="row">
+<input type="hidden" name="view_mode" value="{{view_mode}}">
+{% if view_mode != 'month' %}<select name="year"><option value="">年份：全部</option>{% for y in years %}<option value="{{y}}" {% if f.year == y|string %}selected{% endif %}>{{y}}</option>{% endfor %}</select>{% endif %}
+<select name="status"><option value="">状态：全部</option>{% for k, v in statuses.items() %}<option value="{{k}}" {% if f.status == k %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
+<button>筛选</button><a class="btn ghost" href="/meetings{{qs(view_mode)}}&year=&status=">清除</a>
+<span class="muted">共 {{meetings|length}} 场</span></form></div>
+
+{# ---------- 列表：将来的在前 ---------- #}
+{% if view_mode == 'list' %}
+<div class="card"><h3>即将举行 <span class="muted" style="font-weight:400">{{upcoming|length}} 场</span></h3>
+{% if upcoming %}<table><tr><th>时间</th><th>倒计时</th><th>会议</th><th>地点</th><th>状态</th><th class="num">已确认专家</th></tr>
+{% for m in upcoming %}<tr><td class="mono">{{m.when or '待定'}}</td>
+<td class="mono">{% if m.days_away is not none %}{% if m.days_away > 0 %}{{m.days_away}} 天后{% elif m.days_away == 0 %}<b style="color:var(--teal)">今天</b>{% else %}进行中{% endif %}{% else %}—{% endif %}</td>
+<td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td><td>{{m.location}}</td><td>{{status_tag(m)}}</td>
+<td class="num">{{counts.get(m.id, 0)}} 位</td></tr>{% endfor %}</table>
+{% else %}<p class="muted" style="margin:0">还没有排期中的会议。在下面新建，填上日期就会出现在这里和月历上。</p>{% endif %}</div>
+
+<div class="card flush"><div style="padding:16px 20px 0"><h3 style="margin:0">已举办 <span class="muted" style="font-weight:400">{{past|length}} 场</span></h3></div>
+<table style="margin-top:10px"><tr><th>时间</th><th>会议</th><th>地点</th><th>状态</th><th class="num">参会专家</th></tr>
+{% for m in past %}<tr><td class="mono">{{m.when}}</td><td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td>
 <td>{{m.location}}</td><td>{{status_tag(m)}}</td><td class="num">{{counts.get(m.id, 0)}} 位</td></tr>
 {% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">没有符合条件的会议</td></tr>{% endfor %}</table></div>
+
+{# ---------- 月历 ---------- #}
+{% elif view_mode == 'month' %}
+<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:12px">
+<div class="row" style="gap:6px"><a class="btn ghost" href="?view_mode=month&month={{prev}}{% if f.status %}&status={{f.status}}{% endif %}">← 上月</a>
+<h3 style="margin:0;min-width:150px;text-align:center">{{cur.year}} 年 {{cur.month}} 月</h3>
+<a class="btn ghost" href="?view_mode=month&month={{next}}{% if f.status %}&status={{f.status}}{% endif %}">下月 →</a></div>
+<a class="btn ghost sm" href="?view_mode=month{% if f.status %}&status={{f.status}}{% endif %}">回到本月</a></div>
+<table class="cal"><tr>{% for d in ['一','二','三','四','五','六','日'] %}<th>周{{d}}</th>{% endfor %}</tr>
+{% for week in grid %}<tr>
+{% for day, items in week %}
+<td class="{{ 'out' if day.month != cur.month }}{{ ' today' if day == today }}">
+<div class="d">{{day.day}}{% if day == today %} <span class="muted">今天</span>{% endif %}</div>
+{% for m in items %}<a class="ev {{m.status}}" href="/meetings/{{m.id}}" title="{{m.name}}{% if m.location %} · {{m.location}}{% endif %} · {{counts.get(m.id, 0)}} 位专家">{{m.name}}</a>{% endfor %}
+</td>{% endfor %}</tr>{% endfor %}</table></div>
+
+{% if nearest %}<div class="card" style="text-align:center;padding:22px">
+<p class="muted" style="margin:0 0 10px">{{cur.year}} 年 {{cur.month}} 月没有排期的会议</p>
+<a class="btn ghost" href="?view_mode=month&month={{nearest[0]}}{% if f.status %}&status={{f.status}}{% endif %}">跳到 {{nearest[1]}}（{{nearest[2].name}}）</a></div>{% endif %}
+{% if in_month %}<div class="card"><h3>本月会议 <span class="muted" style="font-weight:400">{{in_month|length}} 场</span></h3>
+<table>{% for m in in_month %}<tr><td class="mono" style="width:150px">{{m.when}}</td>
+<td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td><td>{{m.location}}</td>
+<td style="width:80px">{{status_tag(m)}}</td><td class="num" style="width:90px">{{counts.get(m.id, 0)}} 位</td></tr>{% endfor %}</table></div>{% endif %}
+{% if undated %}<div class="card"><h3>未排期 <span class="muted" style="font-weight:400">{{undated|length}} 场 · 只有年份，没填具体日期</span></h3>
+<table>{% for m in undated %}<tr><td class="mono" style="width:80px">{{m.year or '—'}}</td>
+<td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td><td>{{status_tag(m)}}</td>
+<td class="num" style="width:90px">{{counts.get(m.id, 0)}} 位</td></tr>{% endfor %}</table></div>{% endif %}
+
+{# ---------- 按年份 ---------- #}
+{% else %}
+{% for y, rows in by_year.items() %}
+<div class="card"><h3 style="margin-bottom:10px">{{y}} <span class="muted" style="font-weight:400">{{rows|length}} 场</span></h3>
+<table>{% for m in rows %}<tr><td class="mono" style="width:150px">{{m.when}}</td>
+<td><a class="name" href="/meetings/{{m.id}}">{{m.name}}</a></td><td>{{m.location}}</td>
+<td style="width:80px">{{status_tag(m)}}</td><td class="num" style="width:90px">{{counts.get(m.id, 0)}} 位</td></tr>{% endfor %}</table></div>
+{% else %}<div class="card muted" style="text-align:center;padding:32px">没有符合条件的会议</div>{% endfor %}
 {% endif %}
 
 {% if sess.role in ['admin','planner'] %}
@@ -38,5 +78,5 @@
 <input name="location" placeholder="地点" style="width:150px">
 <select name="status">{% for k, v in statuses.items() %}<option value="{{k}}" {% if k=='planned' %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
 <button>创建</button></form>
-<p class="muted" style="margin:10px 0 0">有具体日期就填日期，只记得年份就填年份。会议建好后，在专家详情页的「合作历史」里把人挂上去。</p></div>{% endif %}
+<p class="muted" style="margin:10px 0 0">填了日期才会出现在月历上。会议建好后，在专家详情页的「合作历史」里把人挂上去。</p></div>{% endif %}
 {% endblock %}
