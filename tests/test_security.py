@@ -12,7 +12,8 @@ from itsdangerous import URLSafeTimedSerializer
 @pytest.fixture
 def client(tmp_path):
     from app import models
-    eng = models.make_engine(str(tmp_path / "sec.db"))
+    from conftest import make_test_engine
+    eng = make_test_engine(tmp_path / "sec.db")
     models.engine = eng
     models.SessionLocal.configure(bind=eng)
     models.init_db(eng)

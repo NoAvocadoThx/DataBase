@@ -1,3 +1,4 @@
+import pytest
 import io, openpyxl
 from app import importer, extract, search, auth
 from app.models import Expert, DuplicateCandidate, Participation
@@ -130,6 +131,33 @@ def test_migrate_adds_missing_columns(tmp_path):
     s = sessionmaker(bind=eng)()
     e = s.query(Expert).one()
     assert e.name == "老数据" and e.source_text is None
+
+
+def test_migrate_adds_column_and_index_any_dialect(tmp_path):
+    """_migrate 在 SQLite 和 PostgreSQL 上都要能补回缺失的列和索引，且不碰已有数据。
+    设了 TEST_DATABASE_URL 时这条就是 PG 的迁移回归测试。"""
+    import sqlalchemy as sa
+    from conftest import make_test_engine
+    from app.models import Base, Expert, init_db
+    eng = make_test_engine(tmp_path / "mig.db")
+    Base.metadata.create_all(eng)
+    with eng.begin() as c:
+        c.execute(sa.text("INSERT INTO expert (name, org) VALUES ('老数据', '旧单位')"))
+    try:
+        with eng.begin() as c:
+            c.execute(sa.text('ALTER TABLE expert DROP COLUMN focus_note'))
+            c.execute(sa.text('DROP INDEX ix_expert_org'))
+    except sa.exc.OperationalError:                       # 老版本 SQLite 不支持 DROP COLUMN
+        pytest.skip("当前 SQLite 不支持 DROP COLUMN")
+    insp = sa.inspect(eng)
+    assert "focus_note" not in {c["name"] for c in insp.get_columns("expert")}
+    init_db(eng)
+    insp = sa.inspect(eng)
+    assert "focus_note" in {c["name"] for c in insp.get_columns("expert")}
+    assert "ix_expert_org" in {i["name"] for i in insp.get_indexes("expert")}
+    init_db(eng)                                          # 幂等：再跑一次不报错
+    with eng.connect() as c:
+        assert c.execute(sa.select(sa.func.count()).select_from(Expert.__table__)).scalar() == 1
 
 
 def test_search_prefilter_matches_full_scan(s):

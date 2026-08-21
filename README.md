@@ -18,6 +18,9 @@ set SECURE_COOKIE=0           # 本机是 http，不关掉登录不上
 ```
 
 环境变量（见 `.env.example`）：
+- `DATABASE_URL`：不设就用 SQLite（`DB_PATH`，默认 `experts.db`）；设成
+  `postgresql+psycopg://user:pass@host/db` 就切到 PostgreSQL。十几人以上同时在线建议换 PG，
+  搬数据用 `python scripts/migrate_to_pg.py`，详见 `DEPLOY.md`
 - `SECRET_KEY`：会话签名密钥，**生产必填**（`openssl rand -hex 32`，至少 32 字符）。缺失或过短会拒绝启动——防止用可预测的密钥被伪造管理员会话
 - `SECURE_COOKIE`：默认 `1`（Cookie 只在 HTTPS 下发送）。仅无 HTTPS 的演示环境设 `0`
 - `LLM_API_KEY` / `LLM_URL` / `LLM_MODEL`：OpenAI 兼容的大模型接口（默认 DeepSeek）。不设则资料抽取走规则、检索走关键词，功能完整可用
@@ -52,6 +55,7 @@ AI 安全：发送给大模型前，手机 / 邮箱 / 微信号已正则打码�
 ## 备份
 
 `python scripts/backup.py` 把数据库和上传文件复制到 `backups/日期/`，保留 30 天。加到 Windows 计划任务或 cron 每日执行。
+PostgreSQL 模式（设了 `DATABASE_URL`）下自动改用 `pg_dump -Fc`，产出 `experts.dump`。
 
 ## 压测数据
 
@@ -62,19 +66,25 @@ AI 安全：发送给大模型前，手机 / 邮箱 / 微信号已正则打码�
 ```
 python -m pytest tests -q
 ```
+默认跑在 SQLite 上。要在 PostgreSQL 上跑同一套测试：
+```
+set TEST_DATABASE_URL=postgresql+psycopg://postgres:test@127.0.0.1:5432/experts
+python -m pytest tests -q
+```
 - `tests/test_core.py` 单元测试（导入去重、合并、脱敏、抽取、检索排序）
 - `tests/test_acceptance.py` 端到端验收（登录 → 导入 → 重复合并 → 权限 → 上传 PDF 审核入库 → 自然语言检索 → 导出 → 编辑删除 → 修改历史/回收站 → 分面筛选 → 表头排序）
 - `tests/test_security.py` 安全回归（伪造会话、越权、脱敏绕过、开放重定向、登录限速、导出审计、大模型脱敏、部署配置）
 
-共 44 项。
+共 58 项，SQLite 和 PostgreSQL 上都跑通。
 
 ## 目录
 
 ```
-app/models.py    数据模型        app/importer.py  Excel 导入导出、去重合并
+app/models.py    数据模型/连接池  app/importer.py  Excel 导入导出、去重合并
 app/auth.py      登录与权限      app/extract.py   文件转文本、AI/规则抽取、打码
 app/search.py    自然语言检索    app/main.py      路由
 app/templates/   页面            scripts/backup.py 备份
+                                 scripts/migrate_to_pg.py  SQLite → PostgreSQL 整库迁移
 docs/superpowers/specs/  设计记录    V1-MVP范围确认书.md  给企业的范围文件
 ```
 

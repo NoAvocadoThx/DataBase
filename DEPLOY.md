@@ -127,6 +127,90 @@ crontab -e
 
 ---
 
+## 数据库：SQLite 还是 PostgreSQL
+
+默认用 SQLite（单文件 `data/experts.db`），零运维。**什么时候该换 PostgreSQL：**
+
+| 情况 | 建议 |
+|---|---|
+| 几个人用、数据几千条 | 继续用 SQLite |
+| **同时在线十几人以上**（100 人日活基本一定会撞上） | 换 PostgreSQL |
+| 列表页/分面在高峰期明显变慢，日志里出现 `QueuePool limit ... timed out` 或 `database is locked` | 换 PostgreSQL |
+| 想做异地只读副本、按小时 PITR 恢复 | 换 PostgreSQL |
+
+实测（3000 条数据、20 并发混合读写，单进程 uvicorn）：SQLite 和 PostgreSQL 差别不大；
+换到 **1 万条**（即当前真实数据量）后差距拉开——总耗时 PG 11.9s / SQLite 40.4s，
+列表页 p95 PG 2.8s / SQLite 16.4s。原因是 SQLite 的读事务会长时间占住连接，把连接池耗光。
+
+切换靠一个环境变量，代码不用改：
+
+```
+DATABASE_URL=postgresql+psycopg://expert:密码@db:5432/experts
+```
+**不设 `DATABASE_URL` 就还是 SQLite**（继续读 `DB_PATH`），本地开发、跑测试都不受影响。
+
+连接池参数（只对 PostgreSQL 生效，默认值按 100 人日活估的）：
+`DB_POOL_SIZE=20`（常驻连接）、`DB_MAX_OVERFLOW=30`（峰值额外连接）、`DB_POOL_TIMEOUT=30`、
+`DB_POOL_RECYCLE=1800`。峰值最多占 50 个连接，PostgreSQL 默认 `max_connections=100`，够用。
+
+### 用 docker compose 起 PostgreSQL
+
+```bash
+cat >> .env <<'EOF'
+POSTGRES_PASSWORD=用 openssl rand -hex 24 生成
+POSTGRES_USER=expert
+POSTGRES_DB=experts
+DATABASE_URL=postgresql+psycopg://expert:上面那个密码@db:5432/experts
+EOF
+chmod 600 .env
+docker compose --profile pg up -d --build
+docker compose ps            # db 要是 healthy
+```
+
+- `db` 服务放在 `pg` profile 里：**不加 `--profile pg` 就还是原来的单容器 SQLite 跑法**，两种方式都保留。
+- `db` 不映射端口，只有 compose 网络内的 `web` 能连，公网碰不到。
+- 数据在命名卷 `pgdata` 里，`docker compose down` 不会删；真要删得 `docker volume rm`。
+- 建库时带了 `--lc-collate=C`：让中文和英文按码位排序，**与 SQLite 一致**，否则表头按姓名/单位排序的结果两边会不一样。
+
+### 把现有 SQLite 数据搬过去
+
+```bash
+docker compose --profile pg up -d db          # 只起数据库
+docker compose run --rm web python scripts/migrate_to_pg.py     --sqlite /srv/data/experts.db     --pg "postgresql+psycopg://expert:密码@db:5432/experts"
+```
+
+脚本会把 **专家、标签、专家-标签关联、会议、合作记录、分组、分组成员、用户、疑似重复、
+上传文档、修改历史 change_log、访问日志 access_log** 全部搬过去，**保留原来的主键 ID 和外键关系**，
+最后打印每张表源库/目标库的条数对比，对不上会以退出码 1 结束。
+
+- **幂等**：按主键判断，目标库已有同 ID 的行直接跳过。重复跑只会打印"跳过 N 行"，不会重复插入。
+- 迁完会重置各表的自增序列（`setval`），否则应用新增第一条就会撞主键冲突。
+- 文档正文里的 NUL 字节（`\x00`，PDF 抽取偶尔会带）会被去掉——PostgreSQL 的 text 类型存不了。
+- 迁完再改 `.env` 里的 `DATABASE_URL`，然后 `docker compose --profile pg up -d`。
+- **先别删 SQLite 文件**，跑一周确认没问题再归档。
+
+### 备份（PostgreSQL）
+
+`scripts/backup.py` 自动识别：设了 `DATABASE_URL` 就用 `pg_dump -Fc`（自定义格式、带压缩），
+输出 `backups/日期/experts.dump`，权限 600；没设就还是 SQLite 在线备份。cron 不用改：
+
+```bash
+0 3 * * * cd /opt/expert && docker compose exec -T web python scripts/backup.py >> /var/log/expert-backup.log 2>&1
+```
+
+手工备份 / 还原：
+```bash
+# 备份
+docker compose exec -T db pg_dump -Fc -U expert experts > 专家库_$(date +%F).dump
+# 还原到空库（-c 先删同名对象）
+docker compose exec -T db pg_restore -c -U expert -d experts < 专家库_2026-08-20.dump
+# 只看内容不还原
+docker compose exec -T db pg_restore -l < 专家库_2026-08-20.dump
+```
+备份文件里是全部机密名单，异地副本必须加密、存储桶设私有，参照 B5 的要求。
+
+---
+
 ## 上线检查清单（逐项打勾，全绿再交付）
 
 **代码与配置**
@@ -143,8 +227,10 @@ crontab -e
 
 **传输与存储**
 - [ ] 域名已备案，HTTPS 生效，浏览器显示小锁
-- [ ] 备份 cron 跑过一次，`data/backups/` 里有文件且权限 700
+- [ ] 备份 cron 跑过一次，`data/backups/` 里有文件且权限 700（PG 模式下是 `experts.dump`）
 - [ ] 备份异地副本已加密
+- [ ] 用 PostgreSQL 时：`.env` 里 `POSTGRES_PASSWORD` 已设且非弱口令；`docker compose config` 确认 `db` 服务没有映射端口
+- [ ] 用 PostgreSQL 时：`migrate_to_pg.py` 的条数对比全 OK，且抽查几位专家的标签/合作记录/分组都在
 
 **大模型**
 - [ ] 与企业书面确认：可否调用第三方大模型 API
@@ -171,6 +257,7 @@ cd /opt/expert && git pull && docker compose up -d --build
 **排错**
 ```bash
 docker compose logs -f web     # 应用日志
+docker compose logs -f db      # 数据库日志（PG 模式）
 docker compose ps              # 容器状态
 systemctl status caddy         # 反代与证书
 ```
