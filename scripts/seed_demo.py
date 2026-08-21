@@ -1,11 +1,15 @@
-"""生成 N 条假专家数据用于压测/演示（默认 10000）。用法: python scripts/seed_demo.py [N] [--db path]
-全部为随机拼接的虚构信息。"""
+"""生成 N 条假专家数据用于压测/演示（默认 10000）。
+用法: python scripts/seed_demo.py [N] [--db 路径 | --url postgresql+psycopg://...]
+不带 --db/--url 时用环境变量 DATABASE_URL，再退回 DB_PATH。全部为随机拼接的虚构信息。"""
 import os, random, sys
 from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if "--db" in sys.argv:
     os.environ["DB_PATH"] = sys.argv[sys.argv.index("--db") + 1]
+    os.environ.pop("DATABASE_URL", None)      # 显式指定 SQLite 文件时不再受 DATABASE_URL 影响
+if "--url" in sys.argv:
+    os.environ["DATABASE_URL"] = sys.argv[sys.argv.index("--url") + 1]
 
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app import history  # noqa: E402,F401
