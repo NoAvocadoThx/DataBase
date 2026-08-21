@@ -7,8 +7,9 @@
 <div><label>开始日期</label><input name="date_from" type="date" value="{{f.date_from}}" class="w"></div>
 <div><label>结束日期</label><input name="date_to" type="date" value="{{f.date_to}}" class="w"></div>
 <div class="row"><button>筛选</button><a class="btn ghost" href="/history">清除</a></div></form>
+{% if can_revert %}<p class="muted" style="margin:12px 0 0">撤销会产生一条新的历史记录，原记录不会消失。彻底删除和合并无法撤销。</p>{% endif %}
 <p class="muted" style="margin:12px 0 0">符合条件 <b style="color:var(--teal)">{{found}}</b> 条</p></div>
-<div class="card flush"><table><tr><th>时间</th><th>操作人</th><th>专家</th><th>操作</th><th>内容</th></tr>
+<div class="card flush"><table><tr><th>时间</th><th>操作人</th><th>专家</th><th>操作</th><th>内容</th>{% if can_revert %}<th style="text-align:right">撤销</th>{% endif %}</tr>
 {% with show_expert=true %}{% include "_log_rows.html" %}{% endwith %}</table>
 <div style="padding:0 14px">{% include "_pager.html" %}</div></div>
 {% endblock %}

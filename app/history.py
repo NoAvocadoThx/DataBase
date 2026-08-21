@@ -165,3 +165,147 @@ def access_filtered(s: Session, actor: str = "", action: str = "", name: str = "
 
 def access_actors(s: Session) -> list[str]:
     return [a for (a,) in s.query(AccessLog.actor).distinct().order_by(AccessLog.actor) if a]
+
+
+# ---------------- 撤销（revert）----------------
+# 三条原则：
+# 1. 撤销本身是一次新的操作，会再写一条历史；绝不删除或修改原记录——审计链不能断。
+# 2. 字段在那之后又被改过时，默认拒绝并说明，避免把更新的值悄悄盖掉（可强制执行）。
+# 3. 做不到的（彻底删除、合并）明确说明原因，不给一个点了没反应的按钮。
+
+REVERT_UNSUPPORTED = {
+    "purge": "数据已彻底删除，无法恢复",
+    "merge": "合并涉及标签、合作记录的迁移，无法一键还原；请到回收站恢复被合并方后手工调整",
+    "export": "导出不改动数据，无需撤销",
+    "meeting_new": "新建会议请到会议页面处理",
+    "meeting_edit": "会议信息修改请到会议页面处理",
+}
+FIELD_ACTIONS = ("update", "import", "approve")   # 这三种可能是字段修改，也可能是新建
+
+
+def revert_blocker(s: Session, c: "ChangeLog") -> str | None:
+    """返回不能撤销的原因；None 表示可以撤销。"""
+    if c.action in REVERT_UNSUPPORTED:
+        return REVERT_UNSUPPORTED[c.action]
+    if c.expert_id is None:
+        return "这条记录没有关联到具体专家"
+    e = s.get(Expert, c.expert_id)
+    if e is None:
+        return "该专家已被彻底删除"
+    if c.action in FIELD_ACTIONS and not c.is_diff:
+        return None          # 新建型：撤销 = 移入回收站
+    if c.action in ("create",) or c.is_diff:
+        return None
+    if c.action in ("delete", "restore", "focus", "group_add", "group_del",
+                    "meeting_add", "meeting_del"):
+        return None
+    return "这种操作暂不支持撤销"
+
+
+def revert_conflicts(s: Session, c: "ChangeLog") -> list[str]:
+    """字段修改类：找出"当前值已不等于当时改成的值"的字段，说明期间又被人改过。"""
+    if not c.is_diff:
+        return []
+    e = s.get(Expert, c.expert_id)
+    if e is None:
+        return []
+    now = snapshot(e)
+    out = []
+    for k, pair in c.diff.items():
+        key = k if k in TRACKED or k == "tags" else None
+        if key is None:               # 关注分级等用中文键，单独处理
+            continue
+        if now.get(key, "") != (pair[1] or ""):
+            out.append(LABELS.get(key, key))
+    return out
+
+
+def apply_revert(s: Session, c: "ChangeLog", actor: str) -> str:
+    """执行撤销，返回给用户看的说明。调用前必须先过 revert_blocker。"""
+    from . import importer                      # 延迟导入避免循环依赖
+    from .models import ExpertGroup, FOCUS_LEVELS, Participation
+    e = s.get(Expert, c.expert_id)
+    label = ACTIONS.get(c.action, c.action)
+    before = snapshot(e)
+
+    # 新建型（新建 / 导入或审核时新建）→ 移入回收站
+    if c.action == "create" or (c.action in FIELD_ACTIONS and not c.is_diff):
+        if e.deleted_at:
+            return f"「{e.name}」已在回收站中，无需撤销"
+        importer.soft_delete(s, e, actor, f"撤销{label}操作（历史 #{c.id}）")
+        return f"已撤销{label}：「{e.name}」移入回收站，可再恢复"
+
+    if c.action == "delete":
+        if not e.deleted_at:
+            return f"「{e.name}」当前未被删除，无需撤销"
+        importer.restore(s, e, actor)
+        return f"已撤销删除：「{e.name}」已恢复"
+
+    if c.action == "restore":
+        if e.deleted_at:
+            return f"「{e.name}」当前已在回收站，无需撤销"
+        importer.soft_delete(s, e, actor, f"撤销恢复操作（历史 #{c.id}）")
+        return f"已撤销恢复：「{e.name}」重新移入回收站"
+
+    if c.action == "focus":
+        d = c.diff
+        old_label = (d.get("关注分级") or ["", ""])[0]
+        rev = {v: k for k, v in FOCUS_LEVELS.items()}
+        e.focus_level = rev.get(old_label, "")
+        e.focus_note = (d.get("关注说明") or ["", ""])[0]
+        log(s, actor, "focus", e,
+            {"关注分级": [FOCUS_LEVELS.get(rev.get(old_label, ""), "未分级"), old_label or "未分级"]},
+            f"撤销历史 #{c.id}")
+        return f"已撤销关注分级调整：恢复为「{old_label or '未分级'}」"
+
+    if c.action in ("group_add", "group_del"):
+        d = c.diff
+        gid, name = d.get("分组ID"), d.get("分组", "")
+        g = s.get(ExpertGroup, gid) if gid else s.query(ExpertGroup).filter_by(name=name).first()
+        if not g:
+            return f"分组「{name or '?'}」已不存在，无法撤销"
+        if c.action == "group_add":
+            if e in g.experts:
+                g.experts.remove(e)
+            log(s, actor, "group_del", e, {"分组": g.name, "分组ID": g.id},
+                f"撤销加入分组「{g.name}」（历史 #{c.id}）")
+            return f"已撤销：「{e.name}」移出分组「{g.name}」"
+        if e not in g.experts:
+            g.experts.append(e)
+        log(s, actor, "group_add", e, {"分组": g.name, "分组ID": g.id},
+            f"撤销移出分组「{g.name}」（历史 #{c.id}）")
+        return f"已撤销：「{e.name}」重新加入分组「{g.name}」"
+
+    if c.action in ("meeting_add", "meeting_del"):
+        d = c.diff
+        name, year = d.get("会议", ""), d.get("年份")
+        role, topic = d.get("角色", "") or "", d.get("主题", "") or ""
+        if c.action == "meeting_add":
+            p = (s.query(Participation)
+                 .filter_by(expert_id=e.id, meeting=name, year=year, role=role, topic=topic).first())
+            if not p:
+                return "这条合作记录已不存在，无需撤销"
+            s.delete(p)
+            log(s, actor, "meeting_del", e, d, f"撤销添加合作记录（历史 #{c.id}）")
+            return f"已撤销：删除了「{name}」的合作记录"
+        from .models import Meeting
+        mt = s.query(Meeting).filter_by(name=name, year=year).first()
+        s.add(Participation(expert_id=e.id, meeting_id=mt.id if mt else None,
+                            meeting=name, year=year, role=role, topic=topic))
+        log(s, actor, "meeting_add", e, d, f"撤销删除合作记录（历史 #{c.id}）")
+        return f"已撤销：恢复了「{name}」的合作记录"
+
+    # 字段修改类：把每个字段还原成当时的旧值
+    changed = []
+    for k, pair in c.diff.items():
+        old = pair[0] or ""
+        if k == "tags":
+            e.tags = [importer.get_or_create_tag(s, t) for t in importer.split_tags(old)]
+            changed.append(LABELS["tags"])
+        elif k in TRACKED:
+            setattr(e, k, old)
+            changed.append(LABELS.get(k, k))
+    if not changed:
+        return "这条记录没有可还原的字段"
+    log_update(s, actor, e, before, "update", f"撤销历史 #{c.id}（{label}）")
+    return f"已撤销{label}：还原了 {'、'.join(changed)}"

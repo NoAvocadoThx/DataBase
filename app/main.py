@@ -475,10 +475,10 @@ def expert_groups(eid: int, request: Request, s: Session = Depends(db), sess=Dep
         return back("/", "专家不存在")
     if action == "add" and e not in g.experts:
         g.experts.append(e)
-        history.log(s, sess["name"], "group_add", e, {}, f"加入分组「{g.name}」")
+        history.log(s, sess["name"], "group_add", e, {"分组": g.name, "分组ID": g.id}, f"加入分组「{g.name}」")
     elif action == "del" and e in g.experts:
         g.experts.remove(e)
-        history.log(s, sess["name"], "group_del", e, {}, f"移出分组「{g.name}」")
+        history.log(s, sess["name"], "group_del", e, {"分组": g.name, "分组ID": g.id}, f"移出分组「{g.name}」")
     s.commit()
     return back(request.headers.get("referer", f"/expert/{eid}").split("?")[0] or f"/expert/{eid}")
 
@@ -630,13 +630,35 @@ def access_log_page(request: Request, s: Session = Depends(db), sess=Depends(ADM
                   dedup=history.DEDUP_MINUTES)
 
 
+@app.post("/history/{cid}/revert")
+def revert_change(cid: int, s: Session = Depends(db), sess=Depends(ADMIN), force: str = Form("")):
+    """撤销一条历史操作。撤销本身也会写进历史，原记录永不删除。"""
+    c = s.get(history.ChangeLog, cid)
+    if not c:
+        return back("/history", "记录不存在")
+    blocker = history.revert_blocker(s, c)
+    if blocker:
+        return back("/history", f"无法撤销：{blocker}")
+    conflicts = history.revert_conflicts(s, c)
+    if conflicts and not force:
+        return back("/history", f"这些字段在此之后又被改过：{'、'.join(conflicts)}。"
+                                f"撤销会覆盖较新的值，确认请点该行的「仍要撤销」")
+    msg = history.apply_revert(s, c, sess["name"])
+    s.commit()
+    return back("/history", msg)
+
+
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), actor: str = "",
                  action: str = "", name: str = "", date_from: str = "", date_to: str = "", page: int = 1):
     query = history.filtered(s, actor=actor, action=action, name=name, date_from=date_from, date_to=date_to)
     logs, found, page, pages = paginate(query, page)
+    can_revert = sess["role"] == "admin"
+    blockers = {c.id: history.revert_blocker(s, c) for c in logs} if can_revert else {}
+    conflicts = {c.id: history.revert_conflicts(s, c) for c in logs if can_revert and not blockers.get(c.id)}
     params = {k: v for k, v in dict(actor=actor, action=action, name=name, date_from=date_from, date_to=date_to).items() if v}
     return render("history.html", request, logs=logs, labels=history.LABELS, actions=history.ACTIONS,
+                  can_revert=can_revert, blockers=blockers, conflicts=conflicts,
                   actors=history.actors(s), f=dict(actor=actor, action=action, name=name, date_from=date_from,
                   date_to=date_to), params=params, found=found, page=page, pages=pages)
 

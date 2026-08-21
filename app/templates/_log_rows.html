@@ -12,5 +12,13 @@
   {% for k, v in d.items() %}<div><b>{{labels.get(k, k)}}</b>：<span style="color:#991b1b;text-decoration:line-through">{{v[0] or '（空）'}}</span> → <span style="color:#166534">{{v[1] or '（空）'}}</span></div>{% endfor %}
 {% elif d %}
   <details><summary class="muted">当时的完整数据</summary>{% for k, v in d.items() %}{% if v %}<div><b>{{labels.get(k, k)}}</b>：{{v}}</div>{% endif %}{% endfor %}</details>
-{% endif %}</td></tr>
-{% else %}<tr><td colspan="{{ 5 if show_expert else 4 }}" class="muted">暂无记录</td></tr>{% endfor %}
+{% endif %}</td>
+{% if can_revert %}<td style="text-align:right;white-space:nowrap">
+{% set blk = blockers.get(c.id) %}{% set cf = conflicts.get(c.id) %}
+{% if blk %}<span class="muted" title="{{blk}}">—</span>
+{% elif cf %}<form method="post" action="/history/{{c.id}}/revert" onsubmit="return confirm('{{cf|join('、')}} 在此之后又被改过。
+仍要撤销会覆盖较新的值，确定吗？')">
+<input type="hidden" name="force" value="1"><button class="ghost sm" style="color:var(--bad)">仍要撤销</button></form>
+{% else %}<form method="post" action="/history/{{c.id}}/revert" onsubmit="return confirm('撤销这次「{{c.action_label}}」操作？撤销本身也会记入历史。')">
+<button class="ghost sm">撤销</button></form>{% endif %}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="{{ (6 if can_revert else 5) if show_expert else (5 if can_revert else 4) }}" class="muted">暂无记录</td></tr>{% endfor %}
