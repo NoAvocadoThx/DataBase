@@ -710,30 +710,78 @@ def dup_distinct(did: int, s: Session = Depends(db), sess=Depends(ADMIN)):
 
 # ---------- 资料上传与审核 ----------
 @app.get("/documents", response_class=HTMLResponse)
-def documents(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), msg: str = ""):
-    docs = s.query(Document).order_by(Document.created_at.desc()).all()
-    return render("documents.html", request, docs=docs, msg=msg, llm_on=extract.llm_enabled())
+def documents(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), msg: str = "",
+              status: str = ""):
+    q = s.query(Document)
+    if status in ("pending", "reviewed", "failed"):
+        q = q.filter(Document.status == status)
+    docs = q.order_by(Document.created_at.desc(), Document.id.desc()).all()
+    counts = {k: s.query(Document).filter_by(status=k).count() for k in ("pending", "reviewed", "failed")}
+    return render("documents.html", request, docs=docs, msg=msg, llm_on=extract.llm_enabled(),
+                  counts=counts, f=dict(status=status), max_batch=MAX_BATCH)
+
+
+ALLOWED_DOC_EXT = (".pdf", ".docx", ".pptx", ".txt")
+MAX_BATCH = 30
 
 
 @app.post("/documents")
-async def upload_doc(s: Session = Depends(db), sess=Depends(EDITOR), file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in (".pdf", ".docx", ".pptx", ".txt"):
-        return back("/documents", "仅支持 PDF / Word(.docx) / PPT(.pptx) / TXT")
-    safe = re.sub(r"[^\w.一-龥-]", "_", file.filename)
-    path = os.path.join(UPLOAD_DIR, f"{datetime.now():%Y%m%d%H%M%S}_{safe}")
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    try:
-        text = extract.file_to_text(path)
-    except Exception as ex:
-        return back("/documents", f"文件解析失败: {type(ex).__name__}")
-    cands, how = extract.extract_experts(text)
-    doc = Document(filename=file.filename, path=path, text=text, uploaded_by=sess["name"],
-                   extracted_json=json.dumps(cands, ensure_ascii=False))
-    s.add(doc)
+async def upload_doc(request: Request, s: Session = Depends(db), sess=Depends(EDITOR),
+                     files: list[UploadFile] = File(...)):
+    """批量上传：逐份处理，单份失败不影响其他；内容相同的重复文件直接跳过。"""
+    import hashlib
+    files = [f for f in files if f and f.filename]
+    if not files:
+        return back("/documents", "请选择文件")
+    if len(files) > MAX_BATCH:
+        return back("/documents", f"一次最多上传 {MAX_BATCH} 份，请分批")
+    batch = f"{datetime.now():%Y%m%d%H%M%S}"
+    ok, dup, bad, cand_total, first_id = [], [], [], 0, None
+    for uf in files:
+        name = uf.filename
+        if os.path.splitext(name)[1].lower() not in ALLOWED_DOC_EXT:
+            bad.append(f"{name}（格式不支持）")
+            continue
+        raw = await uf.read()
+        digest = hashlib.sha256(raw).hexdigest()
+        existing = s.query(Document).filter_by(sha256=digest).first()
+        if existing:
+            dup.append(f"{name} → 与已上传的「{existing.filename}」内容相同")
+            continue
+        safe = re.sub(r"[^\w.一-龥-]", "_", name)
+        path = os.path.join(UPLOAD_DIR, f"{batch}_{len(ok) + len(bad):02d}_{safe}")
+        try:
+            with open(path, "wb") as fh:
+                fh.write(raw)
+            text = extract.file_to_text(path)
+            cands, how = extract.extract_experts(text)
+        except Exception as ex:            # 单份出错不打断整批
+            bad.append(f"{name}（解析失败: {type(ex).__name__}）")
+            s.add(Document(filename=name, path=path, text="", uploaded_by=sess["name"],
+                           extracted_json="[]", status="failed", sha256=digest,
+                           method=f"失败: {type(ex).__name__}", batch=batch))
+            continue
+        doc = Document(filename=name, path=path, text=text, uploaded_by=sess["name"],
+                       extracted_json=json.dumps(cands, ensure_ascii=False),
+                       sha256=digest, method=how, batch=batch)
+        s.add(doc)
+        s.flush()
+        ok.append(name)
+        cand_total += len(cands)
+        first_id = first_id or doc.id
     s.commit()
-    return back(f"/documents/{doc.id}", f"已提取 {len(cands)} 位候选（方式: {how}），请审核")
+
+    parts = []
+    if ok:
+        parts.append(f"成功 {len(ok)} 份，共提取 {cand_total} 位候选")
+    if dup:
+        parts.append(f"跳过重复 {len(dup)} 份")
+    if bad:
+        parts.append(f"失败 {len(bad)} 份：{'；'.join(bad[:3])}{'…' if len(bad) > 3 else ''}")
+    msg = " · ".join(parts) or "没有可处理的文件"
+    if len(ok) == 1 and not dup and not bad:
+        return back(f"/documents/{first_id}", f"已提取 {cand_total} 位候选，请审核")
+    return back("/documents", msg)
 
 
 @app.get("/documents/{did}", response_class=HTMLResponse)
@@ -742,7 +790,13 @@ def review_doc(did: int, request: Request, s: Session = Depends(db), sess=Depend
     cands = json.loads(doc.extracted_json or "[]")
     for c in cands:  # 标出库里已有的同名专家，便于判断是更新还是新建
         c["existing"] = [f"{e.name}（{e.org}）" for e in live(s.query(Expert)).filter_by(name=c["name"])]
-    return render("review.html", request, doc=doc, cands=cands, msg=msg, fields=extract.FIELDS)
+    pending = s.query(Document).filter(Document.status == "pending", Document.id != doc.id)
+    if doc.batch:  # 同一批次的优先，方便批量上传后连续审核
+        pending = pending.order_by((Document.batch != doc.batch), Document.id)
+    nxt = pending.first()
+    left = s.query(Document).filter_by(status="pending").count()
+    return render("review.html", request, doc=doc, cands=cands, msg=msg, fields=extract.FIELDS,
+                  nxt=nxt, left=left)
 
 
 @app.post("/documents/{did}/approve")
@@ -771,7 +825,12 @@ async def approve_doc(did: int, request: Request, s: Session = Depends(db), sess
         n += 1
     doc.status = "reviewed"
     s.commit()
-    return back("/documents", f"已入库 {n} 位专家")
+    nxt = s.query(Document).filter(Document.status == "pending",
+                                   Document.batch == doc.batch).order_by(Document.id).first() \
+        or s.query(Document).filter_by(status="pending").order_by(Document.id).first()
+    if nxt:
+        return back(f"/documents/{nxt.id}", f"已入库 {n} 位专家，继续审核下一份")
+    return back("/documents", f"已入库 {n} 位专家，全部审核完毕")
 
 
 @app.post("/documents/{did}/delete")

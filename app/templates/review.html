@@ -1,5 +1,9 @@
 {% extends "base.html" %}{% block body %}
-<h2>审核 <span class="muted" style="font-weight:400">{{doc.filename}} · {{cands|length}} 位候选 · {{ '待审核' if doc.status=='pending' else '已入库' }}</span></h2>
+<div class="row" style="justify-content:space-between;margin-bottom:14px">
+<h2 style="margin:0">审核 <span class="muted" style="font-weight:400">{{doc.filename}} · {{cands|length}} 位候选 · {{ '待审核' if doc.status=='pending' else '已入库' }}</span></h2>
+<div class="row">{% if left %}<span class="muted">还有 {{left}} 份待审核</span>{% endif %}
+{% if nxt %}<a class="btn ghost" href="/documents/{{nxt.id}}">跳过，看下一份 →</a>{% endif %}
+<a class="btn ghost" href="/documents">返回列表</a></div></div>
 <form method="post" action="/documents/{{doc.id}}/approve"><input type="hidden" name="count" value="{{cands|length}}">
 <div class="card"><div class="row"><div><label>本资料对应会议 <span class="muted">可选，填写后为勾选的专家添加合作记录</span></label>
 <div class="row"><input name="meeting" placeholder="会议名称" style="width:320px"><input name="year" placeholder="年份" style="width:90px"></div></div></div></div>

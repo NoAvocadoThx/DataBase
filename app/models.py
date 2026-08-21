@@ -176,9 +176,20 @@ class Document(Base):
     path = Column(String(512), nullable=False)
     text = Column(Text, default="")
     extracted_json = Column(Text, default="[]")    # list[dict] 候选专家
-    status = Column(String(16), default="pending")  # pending / reviewed
+    status = Column(String(16), default="pending")  # pending / reviewed / failed
     uploaded_by = Column(String(64), default="")
     created_at = Column(DateTime, default=datetime.now)
+    sha256 = Column(String(64), index=True)         # 内容指纹，用于识别重复上传
+    method = Column(String(32), default="")         # 抽取方式：llm / rule / 失败原因
+    batch = Column(String(32), index=True)          # 同一次批量上传的标识
+
+    @property
+    def candidate_count(self) -> int:
+        import json as _j
+        try:
+            return len(_j.loads(self.extracted_json or "[]"))
+        except ValueError:
+            return 0
 
 
 class DuplicateCandidate(Base):

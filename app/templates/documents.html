@@ -1,11 +1,58 @@
 {% extends "base.html" %}{% block body %}
 <h2>资料录入</h2>
 <div class="card"><h3>上传资料 <span class="muted">会议议程 / 嘉宾名单 / 简历 · PDF、Word、PPT、TXT</span></h3>
-<form method="post" enctype="multipart/form-data" class="row"><input type="file" name="file" accept=".pdf,.docx,.pptx,.txt" required><button>上传并提取</button></form>
-<p class="muted" style="margin:10px 0 0">{% if llm_on %}大模型已启用，敏感信息打码后发送{% else %}未配置大模型，使用规则抽取{% endif %}。提取结果需人工审核后才入库。</p></div>
-<div class="card flush"><table><tr><th>文件</th><th>上传人</th><th>时间</th><th>状态</th><th></th></tr>
-{% for d in docs %}<tr><td><a href="/documents/{{d.id}}">{{d.filename}}</a></td><td>{{d.uploaded_by}}</td><td class="mono">{{d.created_at.strftime('%m-%d %H:%M')}}</td>
-<td>{% if d.status=='pending' %}<span class="tag warn">待审核</span>{% else %}<span class="tag ok">已入库</span>{% endif %}</td>
-<td style="text-align:right">{% if sess.role=='admin' %}<form method="post" action="/documents/{{d.id}}/delete" onsubmit="return confirm('删除这份资料文件？已入库的专家不受影响')"><button class="ghost">删除</button></form>{% endif %}</td></tr>
-{% else %}<tr><td colspan="5" class="muted" style="padding:28px;text-align:center">还没有上传过资料</td></tr>{% endfor %}</table></div>
+<form method="post" enctype="multipart/form-data" id="upform">
+<label class="drop" id="drop">
+<input type="file" name="files" accept=".pdf,.docx,.pptx,.txt" multiple required id="fileinput" style="display:none">
+<b>点击选择文件</b>，或把多份文件拖到这里<br>
+<span class="muted">一次最多 {{max_batch}} 份</span>
+<div id="picked" class="muted" style="margin-top:10px"></div></label>
+<div class="row" style="margin-top:12px"><button id="upbtn">上传并提取</button>
+<span class="muted" id="uphint">{% if llm_on %}大模型已启用，敏感信息打码后发送{% else %}未配置大模型，使用规则抽取{% endif %}。提取结果需人工审核后才入库。</span></div>
+</form></div>
+
+<div class="card"><div class="row" style="gap:6px">
+<a class="btn {{'' if not f.status else 'ghost'}} sm" href="/documents">全部 {{counts.pending + counts.reviewed + counts.failed}}</a>
+<a class="btn {{'' if f.status=='pending' else 'ghost'}} sm" href="?status=pending">待审核 {{counts.pending}}</a>
+<a class="btn {{'' if f.status=='reviewed' else 'ghost'}} sm" href="?status=reviewed">已入库 {{counts.reviewed}}</a>
+{% if counts.failed %}<a class="btn {{'' if f.status=='failed' else 'ghost'}} sm" href="?status=failed">解析失败 {{counts.failed}}</a>{% endif %}
+{% set first_pending = docs|selectattr('status','equalto','pending')|map(attribute='id')|first %}
+{% if first_pending %}<a class="btn sm" style="margin-left:auto" href="/documents/{{first_pending}}">开始审核 →</a>{% endif %}
+</div></div>
+
+<div class="card flush"><table><tr><th>文件</th><th class="num">候选</th><th>抽取方式</th><th>上传人</th><th>时间</th><th>状态</th><th></th></tr>
+{% for d in docs %}<tr><td>{% if d.status == 'failed' %}{{d.filename}}{% else %}<a href="/documents/{{d.id}}">{{d.filename}}</a>{% endif %}</td>
+<td class="num">{{d.candidate_count}}</td><td class="muted">{{d.method or '—'}}</td><td>{{d.uploaded_by}}</td>
+<td class="mono">{{d.created_at.strftime('%m-%d %H:%M')}}</td>
+<td>{% if d.status=='pending' %}<span class="tag warn">待审核</span>{% elif d.status=='failed' %}<span class="tag bad">解析失败</span>{% else %}<span class="tag ok">已入库</span>{% endif %}</td>
+<td style="text-align:right">{% if sess.role=='admin' %}<form method="post" action="/documents/{{d.id}}/delete" onsubmit="return confirm('删除这份资料文件？已入库的专家不受影响')"><button class="ghost sm">删除</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">还没有上传过资料</td></tr>{% endfor %}</table></div>
+
+<script>
+(function () {
+  var input = document.getElementById("fileinput"), drop = document.getElementById("drop"),
+      picked = document.getElementById("picked"), form = document.getElementById("upform"),
+      btn = document.getElementById("upbtn"), hint = document.getElementById("uphint"), MAX = {{max_batch}};
+  function show() {
+    var n = input.files.length;
+    if (!n) { picked.textContent = ""; return; }
+    var names = Array.prototype.slice.call(input.files, 0, 6).map(function (f) { return f.name; });
+    picked.textContent = "已选 " + n + " 份：" + names.join("、") + (n > 6 ? " 等" : "") +
+      (n > MAX ? "（超过 " + MAX + " 份，请分批）" : "");
+  }
+  input.addEventListener("change", show);
+  ["dragenter", "dragover"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function (e) { input.files = e.dataTransfer.files; show(); });
+  form.addEventListener("submit", function () {   // 大批量解析要时间，别让用户以为卡死
+    btn.disabled = true;
+    btn.textContent = "正在解析 " + input.files.length + " 份…";
+    hint.textContent = "解析中，请不要关闭页面。文件多时可能要等十几秒。";
+  });
+})();
+</script>
 {% endblock %}

@@ -99,7 +99,7 @@ def test_4_document_upload_review_approve(client, tmp_path):
     doc.save(str(pdf))
     login(client, "admin", "admin123")
     with open(pdf, "rb") as f:
-        r = client.post("/documents", files={"file": ("议程.pdf", f, "application/pdf")})
+        r = client.post("/documents", files={"files": ("议程.pdf", f, "application/pdf")})
     loc = r.headers["location"]
     assert re.match(r"/documents/\d+", loc) and "%E5%80%99%E9%80%89" in loc  # 候选
     did = re.search(r"/documents/(\d+)", loc).group(1)
@@ -512,3 +512,65 @@ def test_20_facet_groups_collapsible(client):
     assert 'class="dot"' in seg
     seg2 = h[h.index('data-fg="coop"'):h.index('data-fg="focus"')]
     assert 'class="dot"' not in seg2
+
+
+def _agenda_pdf(tmp_path, name, lines):
+    import fitz
+    p = tmp_path / name
+    d = fitz.open(); pg = d.new_page()
+    pg.insert_text((50, 72), "\n".join(lines), fontname="china-s", fontsize=11)
+    d.save(str(p))
+    return p
+
+
+def test_21_batch_upload(client, tmp_path):
+    login(client, "admin", "admin123")
+    a = _agenda_pdf(tmp_path, "a.pdf", ["09:00 张甲 北京大学肿瘤医院 主任医师", "10:00 李乙 中国药科大学 教授"])
+    b = _agenda_pdf(tmp_path, "b.pdf", ["09:00 王丙 恒瑞医药 研发副总裁"])
+    bad = tmp_path / "c.pdf"; bad.write_bytes(b"not a real pdf")          # 解析必失败
+    txt = tmp_path / "d.txt"; txt.write_text("赵丁 复旦大学附属中山医院 副主任医师", encoding="utf8")
+    r = client.post("/documents", files=[
+        ("files", ("a.pdf", open(a, "rb"), "application/pdf")),
+        ("files", ("b.pdf", open(b, "rb"), "application/pdf")),
+        ("files", ("c.pdf", open(bad, "rb"), "application/pdf")),
+        ("files", ("d.txt", open(txt, "rb"), "text/plain")),
+        ("files", ("e.zip", b"x", "application/zip")),                    # 格式不支持
+    ])
+    loc = r.headers["location"]
+    assert loc.startswith("/documents?"), loc
+    from urllib.parse import unquote
+    msg = unquote(loc.split("msg=")[1])
+    assert "成功 3 份" in msg and "失败 2 份" in msg, msg   # 一份坏文件不影响其他
+    h = page(client, "/documents")
+    assert "张甲" not in h                                   # 还没入库
+    assert "解析失败" in h and "e.zip" not in h              # 格式不支持的不建记录
+    assert "待审核 3" in h
+    # 重复上传同一份内容 → 跳过
+    r = client.post("/documents", files=[("files", ("a-副本.pdf", open(a, "rb"), "application/pdf"))])
+    assert "%E8%B7%B3%E8%BF%87%E9%87%8D%E5%A4%8D" in r.headers["location"]   # 跳过重复
+    assert "待审核 3" in page(client, "/documents")
+    # 审核页有"下一份"，审完自动跳下一份
+    first = int(re.search(r'开始审核 →</a>', h) and re.search(r'href="/documents/(\d+)">开始审核', h).group(1))
+    d1 = page(client, f"/documents/{first}")
+    assert "还有 3 份待审核" in d1 and "跳过，看下一份" in d1
+    cnt = int(re.search(r'name="count" value="(\d+)"', d1).group(1))
+    form = {"count": str(cnt)}
+    for i in range(cnt):
+        form[f"accept_{i}"] = "on"
+        for k in ("name", "org", "title", "field", "email", "phone", "topic", "source_text"):
+            m = re.search(rf'name="{k}_{i}" value="([^"]*)"', d1)
+            form[f"{k}_{i}"] = m.group(1) if m else ""
+    r = client.post(f"/documents/{first}/approve", data=form)
+    assert re.match(r"/documents/\d+", r.headers["location"])              # 自动进入下一份
+    assert "%E7%BB%A7%E7%BB%AD%E5%AE%A1%E6%A0%B8" in r.headers["location"]  # 继续审核
+    h = page(client, "/documents")
+    assert "待审核 2" in h and re.search(r"已入库 [1-9]", h)   # 前面的用例也会留下已入库的文档
+
+
+def test_22_batch_limit(client, tmp_path):
+    login(client, "admin", "admin123")
+    from app.main import MAX_BATCH
+    f = tmp_path / "x.txt"; f.write_text("甲 某大学 教授", encoding="utf8")
+    files = [("files", (f"{i}.txt", f.read_bytes(), "text/plain")) for i in range(MAX_BATCH + 1)]
+    r = client.post("/documents", files=files)
+    assert "%E6%9C%80%E5%A4%9A%E4%B8%8A%E4%BC%A0" in r.headers["location"]   # 一次最多上传

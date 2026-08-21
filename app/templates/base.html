@@ -163,6 +163,12 @@ table.cal .d{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-
 .ev.planned{background:#FFF6E0;color:#8A5A00;border-left-color:#E0A030}
 .ev.cancelled{background:var(--bad-bg);color:var(--bad);border-left-color:var(--bad);text-decoration:line-through}
 
+.drop{display:block;border:2px dashed var(--line);border-radius:8px;padding:26px 20px;text-align:center;
+  cursor:pointer;color:var(--muted);background:var(--ground);transition:border-color .12s,background .12s}
+.drop:hover{border-color:var(--teal);background:var(--tint)}
+.drop.over{border-color:var(--teal);background:var(--tint);border-style:solid}
+.drop b{color:var(--teal)}
+
 /* 审核页 */
 .cand{background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin-bottom:12px;border-left-width:4px}
 .cand.new{border-left-color:var(--ok)}.cand.dup{border-left-color:var(--teal)}
