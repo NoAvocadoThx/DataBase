@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block body %}
+<h2>DeepSeek 用量</h2>
+<p class="muted">AI 助手（{{model}}）的调用次数、token 和估算花费。仅管理员可见。
+明细见 <a href="/chat-log">对话存档</a>。</p>
+
+{% macro box(title, u) -%}
+<div class="rail" style="gap:0"><div class="box">
+<h4>{{title}}</h4>
+<div class="quick" style="margin-top:0;padding-top:0;border-top:0">
+<div><b>调用</b><span>{{u.calls}}</span></div>
+<div><b>花费</b><span class="txt">¥{{'%.2f'|format(u.cost)}}</span></div>
+</div>
+<div class="kv" style="margin-top:12px">
+<div><i>输入</i><span class="mono">{{'{:,}'.format(u.prompt)}}</span></div>
+<div><i>输出</i><span class="mono">{{'{:,}'.format(u.completion)}}</span></div>
+<div><i>缓存</i><span class="mono">{{'{:,}'.format(u.hit)}} · {{u.cache_rate}}%</span></div>
+</div></div></div>
+{%- endmacro %}
+
+<div class="grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+{{box('今日', today)}}{{box('本月', month)}}{{box('累计', total)}}
+</div>
+
+<div class="panel">单价（元 / 百万 token）：缓存命中输入 {{price.hit}} · 未命中输入 {{price.miss}} · 输出 {{price.out}}。
+<b>价格以 DeepSeek 官网当日为准</b>，变价时改 <span class="mono">app/chat.py</span> 顶部的三个常量即可。
+接口没返回缓存字段时输入按未命中计价（宁可估贵）。
+<div class="muted" style="margin-top:4px">限流：{% for r, l in limits.items() %}{{ {'admin':'管理员','planner':'策划','intern':'实习生'}.get(r, r) }}
+{% if l.minute %}{{l.minute}} 次/分{% if l.day %}、{{l.day}} 次/天{% endif %}{% else %}不限{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}。
+另有 <b>{{blocked}}</b> 次提问被话题判断拦下（零成本），<b>{{faked}}</b> 次回答里检出模型编造的专家 id。</div></div>
+
+<div class="grid" style="grid-template-columns:1fr 1fr">
+<div class="card flush"><table>
+<tr><th>本月用量排名</th><th class="num">调用</th><th class="num">token</th><th class="num">花费</th></tr>
+{% for r in by_actor %}<tr><td>{{r.actor}}</td><td class="num">{{r.calls}}</td>
+<td class="num">{{'{:,}'.format(r.tokens)}}</td><td class="num">¥{{'%.2f'|format(r.cost)}}</td></tr>
+{% else %}<tr><td colspan="4" class="muted" style="padding:24px;text-align:center">本月还没有调用</td></tr>{% endfor %}
+</table></div>
+
+<div class="card flush"><table>
+<tr><th>近 14 天</th><th class="num">调用</th><th class="num">token</th><th class="num">花费</th><th style="width:120px"></th></tr>
+{% set top = (by_day|map(attribute='cost')|max) if by_day else 0 %}
+{% for d in by_day %}<tr><td class="mono">{{d.day}}</td><td class="num">{{d.calls}}</td>
+<td class="num">{{'{:,}'.format(d.tokens)}}</td><td class="num">¥{{'%.2f'|format(d.cost)}}</td>
+<td><span style="display:block;height:10px;border-radius:2px;background:var(--teal);
+width:{{ ((d.cost / top * 100) if top else 0)|round(0)|int }}%"></span></td></tr>
+{% else %}<tr><td colspan="5" class="muted" style="padding:24px;text-align:center">近 14 天没有调用</td></tr>{% endfor %}
+</table></div>
+</div>
+{% endblock %}

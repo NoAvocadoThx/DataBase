@@ -186,6 +186,8 @@ table.cal .d{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-
 .bub ul{margin:.2em 0 .5em;padding-left:1.2em}.bub li{margin:.15em 0}
 .bub .step{color:var(--muted);font-size:.88rem}
 .bub.err{background:var(--bad-bg);border-color:#F1C9C4}
+.bub.off{background:var(--tint);border-color:var(--tint-line)}
+.bub .warn{margin-top:8px;padding:7px 10px;border-radius:4px;background:var(--bad-bg);border:1px solid #F1C9C4;color:var(--bad);font-size:.9rem}
 .bub .cursor{display:inline-block;width:7px;height:1em;background:var(--teal);vertical-align:-2px;animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
 .chat .ask{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
@@ -201,10 +203,10 @@ table.cal .d{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-
 {% set path = request.url.path %}
 {% macro nav(href, label, n=0) -%}<a href="{{href}}" class="{{'on' if path == href or (href != '/' and path.startswith(href)) else ''}}">{{label}}{% if n %}<span class="n">{{n}}</span>{% endif %}</a>{%- endmacro %}
 {% if sess %}<header class="top"><a class="brand" href="/"><b>同写意</b>专家智库</a>
-<nav>{{nav('/', '专家列表')}}{{nav('/ask', '找专家')}}{{nav('/chat', 'AI 助手')}}{{nav('/focus', '重点关注')}}{{nav('/groups', '分组')}}{{nav('/meetings', '会议')}}
+<nav>{{nav('/', '专家列表')}}{{nav('/ask', '找专家')}}<a href="/chat" class="{{'on' if path == '/chat' else ''}}">AI 助手</a>{{nav('/focus', '重点关注')}}{{nav('/groups', '分组')}}{{nav('/meetings', '会议')}}
 {% if sess.role in ['admin','planner'] %}{{nav('/documents', '资料录入', pending_docs)}}{{nav('/history', '操作历史')}}{% endif %}
-{% if sess.role=='admin' %}{% set mg = path.startswith(('/duplicates','/trash','/import','/users','/export')) %}<div class="dd {{'on' if mg}}" tabindex="0"><span>管理 ▾{% if pending_dup or trash %}<span class="n">{{pending_dup + trash}}</span>{% endif %}</span>
-<div class="menu"><a href="/duplicates">疑似重复 {% if pending_dup %}<span class="n">{{pending_dup}}</span>{% endif %}</a><a href="/trash">回收站 {% if trash %}<span class="n">{{trash}}</span>{% endif %}</a><a href="/access-log">访问日志</a><a href="/import">Excel 导入</a><a href="/export">导出 Excel</a><a href="/users">用户</a></div></div>{% endif %}
+{% if sess.role=='admin' %}{% set mg = path.startswith(('/duplicates','/trash','/import','/users','/export','/access-log','/chat-log','/chat-usage')) %}<div class="dd {{'on' if mg}}" tabindex="0"><span>管理 ▾{% if pending_dup or trash %}<span class="n">{{pending_dup + trash}}</span>{% endif %}</span>
+<div class="menu"><a href="/duplicates">疑似重复 {% if pending_dup %}<span class="n">{{pending_dup}}</span>{% endif %}</a><a href="/trash">回收站 {% if trash %}<span class="n">{{trash}}</span>{% endif %}</a><a href="/access-log">访问日志</a><a href="/chat-log">AI 对话存档</a><a href="/chat-usage">DeepSeek 用量</a><a href="/import">Excel 导入</a><a href="/export">导出 Excel</a><a href="/users">用户</a></div></div>{% endif %}
 </nav>
 <div class="me"><a href="/account">{{sess.name}}<span class="r">{{ {'admin':'管理员','planner':'策划','intern':'实习生'}[sess.role] }}</span></a><a href="/logout">退出</a></div></header>{% endif %}
 <main class="{% block mainclass %}{% endblock %}">{% if msg %}<div class="msg{% if '错误' in msg or '失败' in msg or '不一致' in msg or '无权限' in msg %} bad{% endif %}">{{msg}}</div>{% endif %}{% block body %}{% endblock %}</main>

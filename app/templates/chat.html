@@ -1,10 +1,18 @@
 {% extends "base.html" %}{% block body %}
 <h2>AI 助手</h2>
 <div class="panel">用大白话问，它会自己去查专家库再回答，提到的专家都带链接可以点开核实。
-<div class="muted" style="margin-top:4px">
+<div class="muted" style="margin-top:6px">
+<b>能做</b>：找专家（方向 / 单位 / 职务 / 标签 / 关注分级 / 合作次数）· 看某位专家的档案和参会历史 ·
+查某场会议的参会名单 · 按方向或标签统计人数、看谁合作最多。<br>
+<b>不做</b>：写代码、翻译、写文案、闲聊、常识和时事问答——这类问题会被<b>直接拒答且不发给大模型</b>，不产生费用。
+</div>
+<div class="muted" style="margin-top:6px">
 {% if llm_on %}已接入 {{model}}。{% else %}<b>未配置大模型</b>（环境变量 LLM_API_KEY 为空），提问会收到提示；请先用<a href="/ask">找专家</a>。{% endif %}
 手机 / 邮箱 / 微信 / 内部备注<b>不会发送给大模型</b>，需要联系方式请点开专家详情页查看。
-每人每分钟最多 {{rate_limit}} 次提问；刷新页面即清空当前对话。对话内容会记入访问日志。</div></div>
+<b>机密内容请写在专家的「内部备注」里，不要写进「简介」</b>——简介会（脱敏后）发给大模型用于判断匹配度。<br>
+回答里引用的每位专家都会与库内记录逐个核对，对不上的会当场标出并去掉链接。
+{% if limits.minute %}你的角色每分钟最多 {{limits.minute}} 次提问{% if limits.day %}、每天 {{limits.day}} 次{% endif %}。{% else %}你的角色不限提问次数。{% endif %}
+刷新页面即清空当前对话；提问和 AI 回答会存档，仅管理员可查。</div></div>
 
 <div class="card chat">
   <div class="egs">
@@ -57,10 +65,11 @@ async function ask(text){
   bubble('me').textContent = text;
   hist.push({role:'user', content:text});
   const b = bubble('ai'); b.innerHTML = '<span class="step">思考中<span class="cursor"></span></span>';
-  let answer = '', steps = [];
+  let answer = '', steps = [], warn = '';
   const paint = (typing) => {
     b.innerHTML = steps.map(s => '<div class="step">' + esc(s) + '</div>').join('')
-                + md(answer) + (typing ? '<span class="cursor"></span>' : '');
+                + md(answer) + (typing ? '<span class="cursor"></span>' : '')
+                + (warn ? '<div class="warn">' + esc(warn) + '</div>' : '');
     log.scrollTop = log.scrollHeight;
   };
   try {
@@ -77,6 +86,9 @@ async function ask(text){
         let ev; try { ev = JSON.parse(line.slice(5)); } catch(e) { continue; }
         if (ev.t === 'delta') { answer += ev.v; paint(true); }
         else if (ev.t === 'tool') { steps.push('· ' + ev.v); paint(true); }
+        else if (ev.t === 'fix') { answer = ev.v; paint(true); }        // 核对后整段替换
+        else if (ev.t === 'warn') { warn = ev.v; paint(false); }
+        else if (ev.t === 'refuse') { b.classList.add('off'); answer = ev.v; paint(false); }
         else if (ev.t === 'error') { b.classList.add('err'); answer += (answer ? '\n\n' : '') + ev.v; paint(false); }
         else if (ev.t === 'done') { paint(false); }
       }
