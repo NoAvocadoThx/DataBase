@@ -5,3 +5,4 @@ jinja2
 openpyxl
 python-multipart
 httpx
+psycopg[binary]

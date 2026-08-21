@@ -1,4 +1,27 @@
 services:
+  # PostgreSQL：100 人日活并发时用它替代 SQLite（SQLite 单写者，打标签/加分组/写访问日志会排队）。
+  # 放在 pg profile 里，不加 --profile pg 启动时这个服务不会起，保持原来的 SQLite 单容器跑法。
+  db:
+    image: postgres:16
+    profiles: ["pg"]
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-expert}
+      # 留空时 postgres 会拒绝初始化并提示 —— 故意不给默认值，避免仓库里出现固定口令
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-experts}
+      # C collation：让中文/英文按码位排序，与 SQLite 一致，两库查询结果不会有出入
+      POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C --encoding=UTF8 --locale-provider=libc"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-expert} -d ${POSTGRES_DB:-experts}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # 不映射端口：只有同一个 compose 网络里的 web 能连，公网碰不到
+
   web:
     build: .
     restart: always
@@ -9,8 +32,20 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_URL: ${LLM_URL:-https://api.deepseek.com/chat/completions}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      # 留空 = 用 SQLite（DB_PATH）。用 PG 时在 .env 里写:
+      #   DATABASE_URL=postgresql+psycopg://expert:密码@db:5432/experts
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-30}
       DB_PATH: /srv/data/experts.db
       UPLOAD_DIR: /srv/data/uploads
       BACKUP_DIR: /srv/data/backups
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false     # db 在 pg profile 里；不启用该 profile 时 web 照常单独启动
     volumes:
       - ./data:/srv/data
+
+volumes:
+  pgdata:

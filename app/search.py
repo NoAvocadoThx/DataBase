@@ -5,7 +5,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from . import extract as ex
-from .models import Expert, Participation, Tag, live
+from .models import Expert, Participation, Tag, csort, live
 
 STOP = set("的 和 与 及 或 找 请 帮我 帮 我 一下 专家 老师 推荐 几位 几个 做 从事 研究 方向 领域 有 没有 过 参加 参与 我们 会议 的人".split())
 
@@ -108,9 +108,11 @@ def score_sql(parsed: dict):
         if not k:
             continue
         like = f"%{k}%"
-        hit = or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
-                  Expert.field.like(like), Expert.bio.like(like),
-                  Expert.id.in_(select(Participation.expert_id).where(Participation.topic.like(like))))
+        # ilike：PG 的 LIKE 对 ASCII 大小写敏感而 SQLite 不敏感；Python 侧 score() 用的是
+        # k.lower() in hay.lower()，只有 ilike 才能和它对上（否则粗排会漏掉 "adc" 命中 "ADC" 的人）。
+        hit = or_(Expert.name.ilike(like), Expert.org.ilike(like), Expert.title.ilike(like),
+                  Expert.field.ilike(like), Expert.bio.ilike(like),
+                  Expert.id.in_(select(Participation.expert_id).where(Participation.topic.ilike(like))))
         terms.append(case((hit, 2), else_=0))
     if parsed.get("tags"):
         tag_hits = (select(func.count(expert_tag.c.tag_id))
@@ -119,7 +121,7 @@ def score_sql(parsed: dict):
                     .scalar_subquery())
         terms.append(tag_hits * 3)
     if parsed.get("org"):
-        terms.append(case((Expert.org.like(f"%{parsed['org']}%"), 2), else_=0))
+        terms.append(case((Expert.org.ilike(f"%{parsed['org']}%"), 2), else_=0))
     if parsed.get("need_meeting"):
         has_meeting = select(func.count(Participation.id)).where(
             Participation.expert_id == Expert.id).scalar_subquery()
@@ -155,4 +157,4 @@ def search(s: Session, parsed: dict, limit: int = 50) -> list[tuple[Expert, int,
 
 
 def all_tag_names(s: Session) -> list[str]:
-    return [t.name for t in s.query(Tag).order_by(Tag.name)]
+    return [t.name for t in s.query(Tag).order_by(csort(Tag.name, s))]

@@ -13,7 +13,8 @@ sys.path.insert(0, ROOT)
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     from app import models
-    eng = models.make_engine(str(tmp_path_factory.mktemp("db") / "acc.db"))
+    from conftest import make_test_engine
+    eng = make_test_engine(tmp_path_factory.mktemp("db") / "acc.db")
     models.engine = eng
     models.SessionLocal.configure(bind=eng)
     models.init_db(eng)
