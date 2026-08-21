@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block body %}
+<h2>访问日志</h2>
+<p class="muted">记录谁查看过哪位专家、导出过什么、检索过什么。仅管理员可见。
+同一人 {{dedup}} 分钟内重复查看同一位专家只记一条（刷新不会刷屏）。</p>
+<div class="card"><form class="filters">
+<div><label>操作人</label><select name="actor" class="w"><option value="">全部</option>{% for a in actors %}<option {% if a==f.actor %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
+<div><label>操作类型</label><select name="action" class="w"><option value="">全部</option>{% for k, v in actions.items() %}<option value="{{k}}" {% if k==f.action %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
+<div><label>专家姓名</label><input name="name" value="{{f.name}}" class="w"></div>
+<div><label>开始日期</label><input name="date_from" type="date" value="{{f.date_from}}" class="w"></div>
+<div><label>结束日期</label><input name="date_to" type="date" value="{{f.date_to}}" class="w"></div>
+<div class="row"><button>筛选</button><a class="btn ghost" href="/access-log">清除</a></div></form>
+<p class="muted" style="margin:12px 0 0">符合条件 <b style="color:var(--teal)">{{found}}</b> 条</p></div>
+<div class="card flush"><table><tr><th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>说明</th><th>来源 IP</th></tr>
+{% for l in logs %}<tr><td class="mono">{{l.created_at.strftime('%Y-%m-%d %H:%M')}}</td><td>{{l.actor}}</td>
+<td><span class="tag {% if l.action=='export' %}bad{% elif l.action=='view' %}warn{% endif %}">{{actions.get(l.action, l.action)}}</span></td>
+<td>{% if l.expert_id %}<a class="name" href="/expert/{{l.expert_id}}">{{l.expert_name}}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td class="muted">{{l.detail}}</td><td class="mono muted">{{l.ip or '—'}}</td></tr>
+{% else %}<tr><td colspan="6" class="muted" style="padding:28px;text-align:center">暂无记录</td></tr>{% endfor %}</table>
+<div style="padding:0 14px">{% include "_pager.html" %}</div></div>
+{% endblock %}

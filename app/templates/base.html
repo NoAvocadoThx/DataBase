@@ -185,7 +185,7 @@ table.cal .d{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-
 <nav>{{nav('/', '专家列表')}}{{nav('/ask', '找专家')}}{{nav('/focus', '重点关注')}}{{nav('/groups', '分组')}}{{nav('/meetings', '会议')}}
 {% if sess.role in ['admin','planner'] %}{{nav('/documents', '资料录入', pending_docs)}}{{nav('/history', '操作历史')}}{% endif %}
 {% if sess.role=='admin' %}{% set mg = path.startswith(('/duplicates','/trash','/import','/users','/export')) %}<div class="dd {{'on' if mg}}" tabindex="0"><span>管理 ▾{% if pending_dup or trash %}<span class="n">{{pending_dup + trash}}</span>{% endif %}</span>
-<div class="menu"><a href="/duplicates">疑似重复 {% if pending_dup %}<span class="n">{{pending_dup}}</span>{% endif %}</a><a href="/trash">回收站 {% if trash %}<span class="n">{{trash}}</span>{% endif %}</a><a href="/import">Excel 导入</a><a href="/export">导出 Excel</a><a href="/users">用户</a></div></div>{% endif %}
+<div class="menu"><a href="/duplicates">疑似重复 {% if pending_dup %}<span class="n">{{pending_dup}}</span>{% endif %}</a><a href="/trash">回收站 {% if trash %}<span class="n">{{trash}}</span>{% endif %}</a><a href="/access-log">访问日志</a><a href="/import">Excel 导入</a><a href="/export">导出 Excel</a><a href="/users">用户</a></div></div>{% endif %}
 </nav>
 <div class="me"><a href="/account">{{sess.name}}<span class="r">{{ {'admin':'管理员','planner':'策划','intern':'实习生'}[sess.role] }}</span></a><a href="/logout">退出</a></div></header>{% endif %}
 <main class="{% block mainclass %}{% endblock %}">{% if msg %}<div class="msg{% if '错误' in msg or '失败' in msg or '不一致' in msg or '无权限' in msg %} bad{% endif %}">{{msg}}</div>{% endif %}{% block body %}{% endblock %}</main>

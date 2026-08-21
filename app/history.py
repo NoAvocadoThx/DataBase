@@ -105,3 +105,63 @@ def actors(s: Session) -> list[str]:
 
 def recent(s: Session, limit: int = 200) -> list[ChangeLog]:
     return s.query(ChangeLog).order_by(ChangeLog.created_at.desc(), ChangeLog.id.desc()).limit(limit).all()
+
+
+# ---------------- 访问留痕（谁看了谁）----------------
+# 与"修改历史"分开：修改历史记录数据变化，访问日志记录"看过"这件事。
+# 混在一起会把修改记录淹没，而且查看量远大于修改量。
+class AccessLog(Base):
+    __tablename__ = "access_log"
+    id = Column(Integer, primary_key=True)
+    actor = Column(String(64), default="", index=True)
+    action = Column(String(24), nullable=False, index=True)   # view / export / search / doc_view
+    expert_id = Column(Integer, index=True)
+    expert_name = Column(String(64), default="")
+    detail = Column(String(256), default="")
+    ip = Column(String(64), default="")
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+ACCESS_ACTIONS = {"view": "查看专家", "export": "导出全库", "search": "检索", "doc_view": "查看资料原文"}
+DEDUP_MINUTES = 30   # 同一人短时间内反复看同一位专家只记一条，避免刷新刷出上千行
+
+
+def log_access(s: Session, actor: str, action: str, *, expert=None, detail: str = "", ip: str = ""):
+    now = datetime.now()
+    eid = expert.id if expert is not None else None
+    recent = (s.query(AccessLog)
+              .filter(AccessLog.actor == actor, AccessLog.action == action,
+                      AccessLog.expert_id.is_(eid) if eid is None else AccessLog.expert_id == eid,
+                      AccessLog.created_at >= now - timedelta(minutes=DEDUP_MINUTES))
+              .order_by(AccessLog.id.desc()).first())
+    if recent:
+        recent.created_at = now      # 只更新时间，不新增行
+        return
+    s.add(AccessLog(actor=actor or "", action=action, expert_id=eid,
+                    expert_name=(expert.name if expert is not None else ""),
+                    detail=detail[:256], ip=ip[:64]))
+
+
+def access_filtered(s: Session, actor: str = "", action: str = "", name: str = "",
+                    date_from: str = "", date_to: str = ""):
+    q = s.query(AccessLog)
+    if actor:
+        q = q.filter(AccessLog.actor == actor)
+    if action:
+        q = q.filter(AccessLog.action == action)
+    if name:
+        q = q.filter(AccessLog.expert_name.like(f"%{name}%"))
+    for v, op in ((date_from, "from"), (date_to, "to")):
+        if not v:
+            continue
+        try:
+            d = datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            continue
+        q = q.filter(AccessLog.created_at >= d) if op == "from" else \
+            q.filter(AccessLog.created_at < d + timedelta(days=1))
+    return q.order_by(AccessLog.created_at.desc(), AccessLog.id.desc())
+
+
+def access_actors(s: Session) -> list[str]:
+    return [a for (a,) in s.query(AccessLog.actor).distinct().order_by(AccessLog.actor) if a]

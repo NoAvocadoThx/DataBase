@@ -248,3 +248,34 @@ def test_shared_pages_scope(client):
     assert client.get("/trash").status_code == 403
     login(client)
     assert client.get("/trash").status_code == 200
+
+
+# ---------- 9. 访问留痕（谁看了谁），仅管理员可见 ----------
+def test_view_is_logged_and_admin_only(client):
+    login(client)
+    client.post("/expert/save", data={"name": "被看甲", "org": "某院", "phone": "13900001111"})
+    import re as _re
+    eid = _re.search(r'/expert/(\d+)"', client.get("/?q=被看甲", follow_redirects=True).text).group(1)
+    client.post("/users", data={"username": "viewer", "password": "view1234", "role": "planner"})
+    # 策划查看专家 → 留痕
+    login(client, "viewer", "view1234")
+    client.get(f"/expert/{eid}", follow_redirects=True)
+    client.get("/ask?q=ADC肿瘤", follow_redirects=True)
+    # 策划看不到访问日志
+    assert client.get("/access-log").status_code == 403
+    login(client)
+    h = client.get("/access-log", follow_redirects=True).text
+    assert "被看甲" in h and "viewer" in h and "查看专家" in h and "检索" in h
+    # 管理员导出也留痕
+    client.get("/export")
+    assert "导出全库" in client.get("/access-log", follow_redirects=True).text
+    # 30 分钟内重复查看只记一条
+    login(client, "viewer", "view1234")
+    for _ in range(5):
+        client.get(f"/expert/{eid}", follow_redirects=True)
+    login(client)
+    h = client.get("/access-log?action=view&name=被看甲", follow_redirects=True).text
+    n = int(_re.search(r"符合条件 <b[^>]*>(\d+)</b> 条", h).group(1))
+    assert n == 1, f"重复查看应去重，实际 {n} 条"
+    # 按操作人筛选
+    assert "被看甲" not in client.get("/access-log?actor=admin&action=view", follow_redirects=True).text

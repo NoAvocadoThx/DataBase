@@ -62,6 +62,14 @@ def render(name: str, request: Request, **ctx):
     return templates.TemplateResponse(name, ctx)
 
 
+def client_ip(request: Request) -> str:
+    """取真实来源 IP。经 Caddy 反代时用 X-Forwarded-For 的第一段。"""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
 def back(url: str, msg: str = "") -> RedirectResponse:
     sep = "&" if "?" in url else "?"
     return RedirectResponse(url + (f"{sep}msg={quote(msg)}" if msg else ""), status_code=303)
@@ -290,6 +298,9 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
                  first=(ms[-1].year if ms else None),
                  top_role=(roles.most_common(1)[0][0] if roles else ""),
                  topics=[m.topic for m in ms if m.topic][:3])
+    history.log_access(s, sess["name"], "view", expert=e, ip=client_ip(request),
+                       detail="含敏感字段" if auth.can_see_sensitive(sess["role"]) else "已脱敏")
+    s.commit()
     return render("detail.html", request, e=view(e, sess["role"]), msg=msg, deleted=e.deleted_at,
                   ms=ms, stats=stats,
                   expert=e, focus_levels=FOCUS_LEVELS, focus_order=FOCUS_ORDER,
@@ -604,6 +615,21 @@ def meeting_delete(mid: int, s: Session = Depends(db), sess=Depends(ADMIN)):
     return back("/meetings", f"已删除会议「{name}」")
 
 
+@app.get("/access-log", response_class=HTMLResponse)
+def access_log_page(request: Request, s: Session = Depends(db), sess=Depends(ADMIN), actor: str = "",
+                    action: str = "", name: str = "", date_from: str = "", date_to: str = "", page: int = 1):
+    """谁看过哪位专家。仅管理员可见——这本身就是敏感信息。"""
+    query = history.access_filtered(s, actor=actor, action=action, name=name,
+                                    date_from=date_from, date_to=date_to)
+    logs, found, page, pages = paginate(query, page)
+    params = {k: v for k, v in dict(actor=actor, action=action, name=name,
+                                    date_from=date_from, date_to=date_to).items() if v}
+    return render("access_log.html", request, logs=logs, actions=history.ACCESS_ACTIONS,
+                  actors=history.access_actors(s), found=found, page=page, pages=pages, params=params,
+                  f=dict(actor=actor, action=action, name=name, date_from=date_from, date_to=date_to),
+                  dedup=history.DEDUP_MINUTES)
+
+
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, s: Session = Depends(db), sess=Depends(EDITOR), actor: str = "",
                  action: str = "", name: str = "", date_from: str = "", date_to: str = "", page: int = 1):
@@ -676,8 +702,10 @@ async def import_post(s: Session = Depends(db), sess=Depends(ADMIN), file: Uploa
 @app.get("/export")
 def export(s: Session = Depends(db), sess=Depends(ADMIN)):
     data = importer.export_excel(s)
-    history.log(s, sess["name"], "export", None, {}, f"导出全部 {live(s.query(Expert)).count()} 位专家",
+    n = live(s.query(Expert)).count()
+    history.log(s, sess["name"], "export", None, {}, f"导出全部 {n} 位专家",
                 expert_id=None, expert_name="（全库）")
+    history.log_access(s, sess["name"], "export", detail=f"导出 {n} 位专家")
     s.commit()
     fn = quote(f"专家库导出_{datetime.now():%Y%m%d}.xlsx")
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -790,6 +818,8 @@ def review_doc(did: int, request: Request, s: Session = Depends(db), sess=Depend
     cands = json.loads(doc.extracted_json or "[]")
     for c in cands:  # 标出库里已有的同名专家，便于判断是更新还是新建
         c["existing"] = [f"{e.name}（{e.org}）" for e in live(s.query(Expert)).filter_by(name=c["name"])]
+    history.log_access(s, sess["name"], "doc_view", detail=doc.filename, ip=client_ip(request))
+    s.commit()
     pending = s.query(Document).filter(Document.status == "pending", Document.id != doc.id)
     if doc.batch:  # 同一批次的优先，方便批量上传后连续审核
         pending = pending.order_by((Document.batch != doc.batch), Document.id)
@@ -853,6 +883,8 @@ def ask(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = 
     if q.strip():
         parsed = search.parse_query(q, search.all_tag_names(s))
         results = [(view(e, sess["role"]), pts, reasons) for e, pts, reasons in search.search(s, parsed, limit=50)]
+        history.log_access(s, sess["name"], "search", detail=f"{q[:80]} → {len(results)} 位", ip=client_ip(request))
+        s.commit()
     return render("ask.html", request, q=q, parsed=parsed, results=results, llm_on=extract.llm_enabled())
 
 
