@@ -3,13 +3,49 @@
 {% set on = f[key] == val %}{% set qs = filters|dictsort|rejectattr('0','equalto',key)|list %}
 <a class="{{'on' if on}}" href="?{{ (dict(qs) | urlencode) }}{% if not on %}&{{key}}={{val|urlencode}}{% endif %}">{{label}}<span>{{'{:,}'.format(n)}}</span></a>
 {%- endmacro %}
+{# 分组可折叠。选中的组强制展开，否则用户看不到自己正在用的筛选条件 #}
+{% macro group(key, title, picked) -%}
+<details class="fgroup" data-fg="{{key}}" open><summary>{{title}}{% if picked %} <span class="dot" title="已筛选"></span>{% endif %}</summary>
+<div>{{ caller() }}</div></details>
+{%- endmacro %}
 <div class="split">
 <aside class="facets">
-<h4>单位类型</h4>{% for k, label, n in facets.org_types %}{{facet_link('org_type', k, label, n)}}{% endfor %}
-<h4>常用标签</h4>{% for name, n in facets.tags %}{{facet_link('tag', name, name, n)}}{% else %}<span class="muted" style="padding:0 8px">暂无标签</span>{% endfor %}
-<h4>合作频次</h4>{% for k, label, n in facets.coop %}{{facet_link('coop', k, label, n)}}{% endfor %}
-<h4>重点关注</h4>{% for k, label, n in facets.focus %}{{facet_link('focus', k, label, n)}}{% endfor %}
+{% call group('org_type', '单位类型', f.org_type) %}{% for k, label, n in facets.org_types %}{{facet_link('org_type', k, label, n)}}{% endfor %}{% endcall %}
+{% call group('tag', '常用标签', f.tag) %}{% for name, n in facets.tags %}{{facet_link('tag', name, name, n)}}{% else %}<span class="muted" style="padding:0 8px">暂无标签</span>{% endfor %}{% endcall %}
+{% call group('coop', '合作频次', f.coop) %}{% for k, label, n in facets.coop %}{{facet_link('coop', k, label, n)}}{% endfor %}{% endcall %}
+{% call group('focus', '重点关注', f.focus) %}{% for k, label, n in facets.focus %}{{facet_link('focus', k, label, n)}}{% endfor %}{% endcall %}
+<div class="row" style="justify-content:space-between;padding:8px 8px 0">
+<button type="button" class="ghost sm" id="fg-all">全部展开</button>
+<a class="muted" href="/" style="text-decoration:none">重置筛选</a></div>
 </aside>
+<script>
+(function () {
+  var KEY = "facetGroups";
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+  var groups = document.querySelectorAll(".fgroup");
+  groups.forEach(function (g) {
+    var k = g.dataset.fg;
+    // 默认全展开；只有用户主动收起过、且该组当前没在筛选时才收起
+    if (saved[k] === false && !g.querySelector(".dot")) g.open = false;
+    g.addEventListener("toggle", function () {
+      saved[k] = g.open;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+      sync();
+    });
+  });
+  var btn = document.getElementById("fg-all");
+  function sync() {
+    var openCount = document.querySelectorAll(".fgroup[open]").length;
+    btn.textContent = openCount === groups.length ? "全部收起" : "全部展开";
+  }
+  btn.addEventListener("click", function () {
+    var expand = btn.textContent === "全部展开";
+    groups.forEach(function (g) { if (!(!expand && g.querySelector(".dot"))) g.open = expand; });
+  });
+  sync();
+})();
+</script>
 <section>
 <div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">专家列表</h2>
 {% if sess.role in ['admin','planner'] %}<a class="btn" href="/expert/new">+ 新增专家</a>{% endif %}</div>

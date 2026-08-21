@@ -495,3 +495,20 @@ def test_19_detail_page_structure(client):
     assert "<summary>添加合作记录</summary>" in h
     # 右栏有联系方式和来源
     assert "联系方式" in h and "13900000001" in h and "录入" in h
+
+
+def test_20_facet_groups_collapsible(client):
+    """分面分组可折叠：默认展开；正在筛选的组带标记且服务端强制展开。"""
+    login(client, "admin", "admin123")
+    h = page(client, "/")
+    assert h.count('<details class="fgroup"') == 4
+    assert h.count('data-fg=') == 4 and h.count(" open>") >= 4      # 默认全展开
+    for key in ("org_type", "tag", "coop", "focus"):
+        assert f'data-fg="{key}"' in h
+    assert 'id="fg-all"' in h and "全部展开" in h and "facetGroups" in h  # 折叠状态记在本地
+    # 正在筛选的组带圆点标记
+    h = page(client, "/?tag=肿瘤")
+    seg = h[h.index('data-fg="tag"'):h.index('data-fg="coop"')]
+    assert 'class="dot"' in seg
+    seg2 = h[h.index('data-fg="coop"'):h.index('data-fg="focus"')]
+    assert 'class="dot"' not in seg2

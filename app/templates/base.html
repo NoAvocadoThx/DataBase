@@ -96,6 +96,16 @@ button.sm,.btn.sm{height:31px;padding:0 11px;font-size:.88rem}
 .facets{scrollbar-width:thin;scrollbar-color:#D3DBE0 transparent}
 .facets h4:first-child{margin-top:0}
 .facets h4{margin:16px 0 6px;font-size:.88rem;letter-spacing:.02em}
+.fgroup{border-bottom:1px solid var(--line)}
+.fgroup:last-child{border-bottom:0}
+.fgroup>summary{cursor:pointer;list-style:none;padding:10px 8px;font-size:.88rem;font-weight:600;color:var(--muted);
+  display:flex;align-items:center;gap:6px;user-select:none}
+.fgroup>summary::-webkit-details-marker{display:none}
+.fgroup>summary::after{content:"▸";margin-left:auto;color:var(--faint);font-size:.8rem;transition:transform .12s}
+.fgroup[open]>summary::after{transform:rotate(90deg)}
+.fgroup>summary:hover{color:var(--text);background:var(--hover);border-radius:4px}
+.fgroup>div{padding-bottom:8px}
+.fgroup .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);display:inline-block}
 .facets a{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:4px;color:var(--text);text-decoration:none;font-size:.95rem}
 .facets a:hover{background:var(--hover)}.facets a.on{background:var(--tint);color:var(--teal-2);font-weight:600}
 .facets a span{font-family:var(--mono);color:var(--muted);font-size:.88rem}
