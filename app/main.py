@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from . import auth, extract, history, importer, search
+from . import auth, chat, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
 from .models import (Document, DuplicateCandidate, Expert, ExpertGroup, FOCUS_LEVELS, FOCUS_ORDER,
                      MEETING_STATUS, Meeting, Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR,
@@ -913,6 +913,73 @@ def ask(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = 
         history.log_access(s, sess["name"], "search", detail=f"{q[:80]} → {len(results)} 位", ip=client_ip(request))
         s.commit()
     return render("ask.html", request, q=q, parsed=parsed, results=results, llm_on=extract.llm_enabled())
+
+
+# ---------- AI 对话 ----------
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request, sess=Depends(ANY)):
+    return render("chat.html", request, llm_on=extract.llm_enabled(), model=extract.LLM_MODEL,
+                  limits=chat.limits_for(sess["role"]))
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request, sess=Depends(ANY)):
+    from fastapi.responses import StreamingResponse
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    msgs = body.get("messages") if isinstance(body, dict) else None
+    q = chat.first_question(msgs if isinstance(msgs, list) else [])
+    if not q:
+        return Response(chat.sse("error", "请先输入问题。") + chat.sse("done", ""),
+                        media_type="text/event-stream")
+    if (warn := chat.rate_limited(sess["name"], sess["role"])):
+        return Response(chat.sse("error", warn) + chat.sse("done", ""),
+                        media_type="text/event-stream")
+    ip = client_ip(request)
+    with SessionLocal() as s:
+        history.log_access(s, sess["name"], "chat", detail=q, ip=ip, dedup=False)
+        s.commit()
+
+    def gen():
+        res = chat.new_result()
+        with SessionLocal() as s2:
+            try:
+                yield from chat.stream_sse(s2, msgs, result=res)
+            finally:                      # 客户端中途断开也要留下存档和用量
+                chat.archive(s2, sess["name"], q, res, ip)
+                s2.commit()
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/chat-log", response_class=HTMLResponse)
+def chat_log_page(request: Request, s: Session = Depends(db), sess=Depends(ADMIN), actor: str = "",
+                  q: str = "", flag: str = "", date_from: str = "", date_to: str = "", page: int = 1):
+    """AI 对话存档。仅管理员可见——存档里有 AI 回答原文，含专家姓名单位。"""
+    query = history.chat_filtered(s, actor=actor, q=q, flag=flag, date_from=date_from, date_to=date_to)
+    logs, found, page, pages = paginate(query, page)
+    params = {k: v for k, v in dict(actor=actor, q=q, flag=flag,
+                                    date_from=date_from, date_to=date_to).items() if v}
+    return render("chat_log.html", request, logs=logs, actors=history.chat_actors(s),
+                  found=found, page=page, pages=pages, params=params,
+                  f=dict(actor=actor, q=q, flag=flag, date_from=date_from, date_to=date_to))
+
+
+@app.get("/chat-usage", response_class=HTMLResponse)
+def chat_usage_page(request: Request, s: Session = Depends(db), sess=Depends(ADMIN)):
+    """DeepSeek 用量与花费。仅管理员可见。"""
+    return render("chat_usage.html", request,
+                  today=history.chat_usage(s, chat.today_start()),
+                  month=history.chat_usage(s, chat.month_start()),
+                  total=history.chat_usage(s),
+                  by_actor=history.chat_usage_by_actor(s, chat.month_start()),
+                  by_day=history.chat_usage_by_day(s, 14),
+                  blocked=s.query(history.ChatArchive).filter(history.ChatArchive.blocked != "").count(),
+                  faked=s.query(history.ChatArchive).filter(history.ChatArchive.fabricated != "").count(),
+                  price=dict(hit=chat.PRICE_CACHE_HIT, miss=chat.PRICE_CACHE_MISS, out=chat.PRICE_OUTPUT),
+                  model=extract.LLM_MODEL, limits=chat.RATE_LIMITS)
 
 
 # ---------- 用户管理 ----------

@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block body %}
+<h2>AI 对话存档</h2>
+<p class="muted">每次提问和 AI 的完整回答。仅管理员可见——回答里会带出专家姓名和单位。
+用量与花费见 <a href="/chat-usage">DeepSeek 用量</a>。</p>
+<div class="card"><form class="filters">
+<div><label>提问人</label><select name="actor" class="w"><option value="">全部</option>{% for a in actors %}<option {% if a==f.actor %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
+<div><label>关键词（问题或回答）</label><input name="q" value="{{f.q}}" class="w"></div>
+<div><label>只看</label><select name="flag" class="w"><option value="">全部</option>
+<option value="fabricated" {% if f.flag=='fabricated' %}selected{% endif %}>模型编造过</option>
+<option value="blocked" {% if f.flag=='blocked' %}selected{% endif %}>被拦下未调用</option></select></div>
+<div><label>开始日期</label><input name="date_from" type="date" value="{{f.date_from}}" class="w"></div>
+<div><label>结束日期</label><input name="date_to" type="date" value="{{f.date_to}}" class="w"></div>
+<div class="row"><button>筛选</button><a class="btn ghost" href="/chat-log">清除</a></div></form>
+<p class="muted" style="margin:12px 0 0">符合条件 <b style="color:var(--teal)">{{found}}</b> 条</p></div>
+<div class="card flush"><table>
+<tr><th class="nw">时间</th><th class="nw">提问人</th><th>问题 / 回答</th><th class="nw">工具</th><th class="num">token</th><th class="num">花费</th><th class="nw">来源 IP</th></tr>
+{% for l in logs %}<tr>
+<td class="mono nw">{{l.created_at.strftime('%m-%d %H:%M')}}</td>
+<td class="nw">{{l.actor}}</td>
+<td><b>{{l.question}}</b>
+{% if l.blocked %}<div style="margin-top:4px"><span class="tag warn">{{ '未配置大模型' if l.blocked=='no_key' else '话题无关，未调用大模型' }}</span></div>{% endif %}
+{% if l.fabricated %}<div style="margin-top:4px"><span class="tag bad">模型编造了 id {{l.fabricated}}</span></div>{% endif %}
+<div class="src" style="margin-top:6px">{{l.answer or '（无回答）'}}</div>
+{% if l.expert_ids %}<div style="margin-top:5px">{% for i in l.expert_ids.split(',') %}<a class="tag" href="/expert/{{i}}">#{{i}}</a>{% endfor %}</div>{% endif %}</td>
+<td class="nw muted" style="font-size:.85rem">{% for t in (l.tools or '').split(',') if t %}<div>{{t}}</div>{% endfor %}{% if l.rounds %}<div class="muted">{{l.rounds}} 轮</div>{% endif %}</td>
+<td class="num">{{l.total_tokens or 0}}{% if l.cache_hit_tokens %}<div class="muted" style="font-size:.8rem">缓存 {{l.cache_rate|round(0)|int}}%</div>{% endif %}</td>
+<td class="num">{% if l.cost %}¥{{'%.4f'|format(l.cost)}}{% else %}<span class="muted">—</span>{% endif %}</td>
+<td class="mono muted nw">{{l.ip or '—'}}</td></tr>
+{% else %}<tr><td colspan="7" class="muted" style="padding:28px;text-align:center">暂无记录</td></tr>{% endfor %}</table>
+<div style="padding:0 14px">{% include "_pager.html" %}</div></div>
+{% endblock %}

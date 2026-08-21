@@ -2,7 +2,7 @@
 import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Session
 
 from .models import Base, Expert
@@ -122,18 +122,21 @@ class AccessLog(Base):
     created_at = Column(DateTime, default=datetime.now, index=True)
 
 
-ACCESS_ACTIONS = {"view": "查看专家", "export": "导出全库", "search": "检索", "doc_view": "查看资料原文"}
+ACCESS_ACTIONS = {"view": "查看专家", "export": "导出全库", "search": "检索", "doc_view": "查看资料原文",
+                  "chat": "AI 对话"}
 DEDUP_MINUTES = 30   # 同一人短时间内反复看同一位专家只记一条，避免刷新刷出上千行
 
 
-def log_access(s: Session, actor: str, action: str, *, expert=None, detail: str = "", ip: str = ""):
+def log_access(s: Session, actor: str, action: str, *, expert=None, detail: str = "", ip: str = "",
+               dedup: bool = True):
+    """dedup=False 用于每条都要留痕的场景（如 AI 对话，每次提问内容都不同，合并会丢信息）。"""
     now = datetime.now()
     eid = expert.id if expert is not None else None
     recent = (s.query(AccessLog)
               .filter(AccessLog.actor == actor, AccessLog.action == action,
                       AccessLog.expert_id.is_(eid) if eid is None else AccessLog.expert_id == eid,
                       AccessLog.created_at >= now - timedelta(minutes=DEDUP_MINUTES))
-              .order_by(AccessLog.id.desc()).first())
+              .order_by(AccessLog.id.desc()).first()) if dedup else None
     if recent:
         recent.created_at = now      # 只更新时间，不新增行
         return
@@ -309,3 +312,113 @@ def apply_revert(s: Session, c: "ChangeLog", actor: str) -> str:
         return "这条记录没有可还原的字段"
     log_update(s, actor, e, before, "update", f"撤销历史 #{c.id}（{label}）")
     return f"已撤销{label}：还原了 {'、'.join(changed)}"
+# ---------------- AI 对话存档（仅管理员可见）----------------
+# 与 AccessLog 分工：AccessLog 记"谁在什么时候问了什么"（全库留痕的一部分），
+# 这里额外存 AI 的完整回答。回答里会带出专家姓名和单位，所以只给管理员看。
+class ChatArchive(Base):
+    __tablename__ = "chat_archive"
+    id = Column(Integer, primary_key=True)
+    actor = Column(String(64), default="", index=True)
+    question = Column(Text, default="")
+    answer = Column(Text, default="")
+    tools = Column(String(256), default="")        # 本轮用到的工具，逗号分隔
+    expert_ids = Column(String(256), default="")   # 回答里引用到的专家 id，逗号分隔
+    fabricated = Column(String(256), default="")   # 模型编造的、库里没有的 id；空 = 正常
+    blocked = Column(String(32), default="")       # 非空表示没发给大模型（如 offtopic）
+    ip = Column(String(64), default="")
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    # ---- DeepSeek 用量（一次提问可能跨多轮工具调用，这里是累加值）----
+    rounds = Column(Integer, default=0)                  # 实际调了几次大模型
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    cache_hit_tokens = Column(Integer, default=0)        # DeepSeek 特有：命中 prompt 缓存的输入
+    cache_miss_tokens = Column(Integer, default=0)
+    cost = Column(Float, default=0.0)                    # 估算花费（元）
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.fabricated and not self.blocked
+
+    @property
+    def cache_rate(self) -> float:
+        hit = self.cache_hit_tokens or 0
+        tot = hit + (self.cache_miss_tokens or 0)
+        return hit / tot * 100 if tot else 0.0
+
+
+def chat_filtered(s: Session, actor: str = "", q: str = "", flag: str = "",
+                  date_from: str = "", date_to: str = ""):
+    """AI 对话存档的筛选 Query（未执行），供分页。q 同时搜问题和回答。"""
+    from sqlalchemy import or_
+    query = s.query(ChatArchive)
+    if actor:
+        query = query.filter(ChatArchive.actor == actor)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(ChatArchive.question.ilike(like), ChatArchive.answer.ilike(like)))
+    if flag == "fabricated":
+        query = query.filter(ChatArchive.fabricated != "")
+    elif flag == "blocked":
+        query = query.filter(ChatArchive.blocked != "")
+    for v, op in ((date_from, "from"), (date_to, "to")):
+        if not v:
+            continue
+        try:
+            d = datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            continue
+        query = query.filter(ChatArchive.created_at >= d) if op == "from" else \
+            query.filter(ChatArchive.created_at < d + timedelta(days=1))
+    return query.order_by(ChatArchive.created_at.desc(), ChatArchive.id.desc())
+
+
+def chat_actors(s: Session) -> list[str]:
+    return [a for (a,) in s.query(ChatArchive.actor).distinct().order_by(ChatArchive.actor) if a]
+
+
+def chat_usage(s: Session, since: datetime | None = None) -> dict:
+    """一段时间内的 DeepSeek 用量汇总。since=None 表示全部。"""
+    from sqlalchemy import func as _f
+    q = s.query(_f.count(ChatArchive.id), _f.coalesce(_f.sum(ChatArchive.prompt_tokens), 0),
+                _f.coalesce(_f.sum(ChatArchive.completion_tokens), 0),
+                _f.coalesce(_f.sum(ChatArchive.cache_hit_tokens), 0),
+                _f.coalesce(_f.sum(ChatArchive.cache_miss_tokens), 0),
+                _f.coalesce(_f.sum(ChatArchive.cost), 0.0))
+    q = q.filter(ChatArchive.blocked == "")          # 被拦下的没发给模型，不算用量
+    if since:
+        q = q.filter(ChatArchive.created_at >= since)
+    n, pin, pout, hit, miss, cost = q.one()
+    return {"calls": n or 0, "prompt": pin or 0, "completion": pout or 0,
+            "total": (pin or 0) + (pout or 0), "hit": hit or 0, "miss": miss or 0,
+            "cost": round(cost or 0.0, 4),
+            "cache_rate": round((hit or 0) / (hit + miss) * 100, 1) if (hit + miss) else 0.0}
+
+
+def chat_usage_by_actor(s: Session, since: datetime | None = None, limit: int = 20) -> list[dict]:
+    from sqlalchemy import func as _f
+    q = (s.query(ChatArchive.actor, _f.count(ChatArchive.id),
+                 _f.coalesce(_f.sum(ChatArchive.total_tokens), 0),
+                 _f.coalesce(_f.sum(ChatArchive.cost), 0.0))
+         .filter(ChatArchive.blocked == "").group_by(ChatArchive.actor))
+    if since:
+        q = q.filter(ChatArchive.created_at >= since)
+    rows = q.order_by(_f.coalesce(_f.sum(ChatArchive.cost), 0.0).desc()).limit(limit).all()
+    return [{"actor": a or "?", "calls": n, "tokens": t, "cost": round(c or 0.0, 4)} for a, n, t, c in rows]
+
+
+def chat_usage_by_day(s: Session, days: int = 14) -> list[dict]:
+    from sqlalchemy import func as _f
+    since = datetime.now() - timedelta(days=days)
+    # 按天分组要跨库：SQLite 用 strftime，PostgreSQL 用 to_char/date()。
+    # 数据量很小（14 天的对话记录），直接取出来在 Python 里聚合，省得写两套方言。
+    rows = (s.query(ChatArchive.created_at, ChatArchive.total_tokens, ChatArchive.cost)
+            .filter(ChatArchive.blocked == "", ChatArchive.created_at >= since).all())
+    agg: dict[str, dict] = {}
+    for created, tok, cost in rows:
+        d = created.strftime("%Y-%m-%d")
+        a = agg.setdefault(d, {"day": d, "calls": 0, "tokens": 0, "cost": 0.0})
+        a["calls"] += 1
+        a["tokens"] += tok or 0
+        a["cost"] += cost or 0.0
+    return [{**a, "cost": round(a["cost"], 4)} for a in sorted(agg.values(), key=lambda x: x["day"], reverse=True)]
