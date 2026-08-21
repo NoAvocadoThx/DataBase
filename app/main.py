@@ -13,7 +13,7 @@ from . import auth, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
 from .models import (Document, DuplicateCandidate, Expert, ExpertGroup, FOCUS_LEVELS, FOCUS_ORDER,
                      MEETING_STATUS, Meeting, Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR,
-                     User, init_db, live, visible_groups)
+                     User, csort, init_db, live, visible_groups)
 
 init_db()
 with SessionLocal() as _s:
@@ -143,16 +143,19 @@ PAGE_SIZE = 50
 
 
 def sort_expr(s: Session, key: str):
-    """列排序表达式。tags=首个标签名，meetings=合作次数。"""
+    """列排序表达式。tags=首个标签名，meetings=合作次数。
+    字符串列走 csort()：PG 默认 collation 排中文/英文大小写与 SQLite 不同，统一按码位排。"""
     from sqlalchemy import func, select
     from .models import expert_tag
     if key == "tags":
-        return (select(func.min(Tag.name)).select_from(expert_tag).join(Tag, Tag.id == expert_tag.c.tag_id)
+        return (select(func.min(csort(Tag.name, s))).select_from(expert_tag)
+                .join(Tag, Tag.id == expert_tag.c.tag_id)
                 .where(expert_tag.c.expert_id == Expert.id).scalar_subquery())
     if key == "meetings":
         return select(func.count(Participation.id)).where(Participation.expert_id == Expert.id).scalar_subquery()
-    return {"name": Expert.name, "org": Expert.org, "title": Expert.title, "field": Expert.field,
-            "phone": Expert.phone, "created": Expert.created_at}.get(key, Expert.updated_at)
+    col = {"name": Expert.name, "org": Expert.org, "title": Expert.title, "field": Expert.field,
+           "phone": Expert.phone, "created": Expert.created_at}.get(key, Expert.updated_at)
+    return csort(col, s) if key in ("name", "org", "title", "field", "phone") else col
 
 
 SORT_DEFAULT_DIR = {"updated": "desc", "created": "desc", "meetings": "desc"}
@@ -175,8 +178,10 @@ COOP_BUCKETS = {"0": "未合作", "1-2": "低频 (1–2)", "3": "高频 (3+)"}
 
 
 def org_type_cond(key: str):
+    # ilike 而不是 like：PG 的 LIKE 对 ASCII 大小写敏感，SQLite 不敏感。统一用 ilike
+    # 保证 "ADC"/"adc" 这类英文关键词两库行为一致（中文无大小写，不受影响）。
     words = ORG_TYPES[key][1]
-    return or_(*[Expert.org.like(f"%{w}%") for w in words])
+    return or_(*[Expert.org.ilike(f"%{w}%") for w in words])
 
 
 def coop_cond(key: str):
@@ -187,16 +192,16 @@ def coop_cond(key: str):
 
 def apply_filters(s: Session, f: dict):
     query = live(s.query(Expert))
-    for kw in f["q"].split():  # 多个关键词 = AND，每个词匹配任一字段
+    for kw in f["q"].split():  # 多个关键词 = AND，每个词匹配任一字段（ilike：大小写不敏感，两库一致）
         like = f"%{kw}%"
-        query = query.filter(or_(Expert.name.like(like), Expert.org.like(like), Expert.title.like(like),
-                                 Expert.field.like(like), Expert.bio.like(like)))
+        query = query.filter(or_(Expert.name.ilike(like), Expert.org.ilike(like), Expert.title.ilike(like),
+                                 Expert.field.ilike(like), Expert.bio.ilike(like)))
     if f["org"]:
-        query = query.filter(Expert.org.like(f"%{f['org']}%"))
+        query = query.filter(Expert.org.ilike(f"%{f['org']}%"))
     if f["title"]:
-        query = query.filter(Expert.title.like(f"%{f['title']}%"))
+        query = query.filter(Expert.title.ilike(f"%{f['title']}%"))
     if f["field"]:
-        query = query.filter(Expert.field.like(f"%{f['field']}%"))
+        query = query.filter(Expert.field.ilike(f"%{f['field']}%"))
     for tname in [x for x in importer.split_tags(f["tag"]) if x]:  # 多标签 = AND
         query = query.filter(Expert.tags.any(Tag.name == tname))
     if f["meeting"] == "yes":
@@ -222,7 +227,7 @@ def top_tag_names(s: Session, limit: int = 10) -> list[str]:
     return [n for (n, _) in (s.query(Tag.name, func.count(expert_tag.c.expert_id))
                              .join(expert_tag, Tag.id == expert_tag.c.tag_id)
                              .group_by(Tag.name)
-                             .order_by(func.count(expert_tag.c.expert_id).desc(), Tag.name)
+                             .order_by(func.count(expert_tag.c.expert_id).desc(), csort(Tag.name, s))
                              .limit(limit))]
 
 
@@ -278,12 +283,12 @@ def index(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str 
     return render("index.html", request, msg=msg, f={**f, "sort": sort, "dir": dir}, params=params, filters=filters,
                   chips=chips, facets=facet_counts(s, f), groups=visible_groups(s, sess).all(),
                   experts=[view(e, sess["role"]) for e in experts], found=found, page=page, pages=pages,
-                  tags=s.query(Tag).order_by(Tag.name).all(), total=live(s.query(Expert)).count())
+                  tags=s.query(Tag).order_by(csort(Tag.name, s)).all(), total=live(s.query(Expert)).count())
 
 
 @app.get("/expert/new", response_class=HTMLResponse)
 def expert_new(request: Request, s: Session = Depends(db), sess=Depends(EDITOR)):
-    return render("expert_form.html", request, e=None, all_tags=s.query(Tag).order_by(Tag.name).all())
+    return render("expert_form.html", request, e=None, all_tags=s.query(Tag).order_by(csort(Tag.name, s)).all())
 
 
 @app.get("/expert/{eid}", response_class=HTMLResponse)
@@ -306,7 +311,7 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
                   expert=e, focus_levels=FOCUS_LEVELS, focus_order=FOCUS_ORDER,
                   meetings=s.query(Meeting).order_by(Meeting.year.desc(), Meeting.name).all(),
                   my_groups=visible_groups(s, sess).all(),
-                  all_tags=s.query(Tag).order_by(Tag.name).all(),
+                  all_tags=s.query(Tag).order_by(csort(Tag.name, s)).all(),
                   logs=history.for_expert(s, eid) if auth.can_see_sensitive(sess["role"]) else [],
                   labels=history.LABELS)
 
@@ -314,7 +319,7 @@ def detail(eid: int, request: Request, s: Session = Depends(db), sess=Depends(AN
 @app.get("/expert/{eid}/edit", response_class=HTMLResponse)
 def expert_edit(eid: int, request: Request, s: Session = Depends(db), sess=Depends(EDITOR)):
     e = s.get(Expert, eid)
-    return render("expert_form.html", request, e=e, all_tags=s.query(Tag).order_by(Tag.name).all())
+    return render("expert_form.html", request, e=e, all_tags=s.query(Tag).order_by(csort(Tag.name, s)).all())
 
 
 @app.post("/expert/save")

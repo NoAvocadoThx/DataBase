@@ -85,7 +85,7 @@ def filtered(s: Session, actor: str = "", action: str = "", name: str = "", date
     if action:
         q = q.filter(ChangeLog.action == action)
     if name:
-        q = q.filter(ChangeLog.expert_name.like(f"%{name}%"))
+        q = q.filter(ChangeLog.expert_name.ilike(f"%{name}%"))
     if date_from:
         try:
             q = q.filter(ChangeLog.created_at >= datetime.strptime(date_from, "%Y-%m-%d"))
@@ -150,7 +150,7 @@ def access_filtered(s: Session, actor: str = "", action: str = "", name: str = "
     if action:
         q = q.filter(AccessLog.action == action)
     if name:
-        q = q.filter(AccessLog.expert_name.like(f"%{name}%"))
+        q = q.filter(AccessLog.expert_name.ilike(f"%{name}%"))
     for v, op in ((date_from, "from"), (date_to, "to")):
         if not v:
             continue
