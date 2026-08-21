@@ -122,18 +122,21 @@ class AccessLog(Base):
     created_at = Column(DateTime, default=datetime.now, index=True)
 
 
-ACCESS_ACTIONS = {"view": "查看专家", "export": "导出全库", "search": "检索", "doc_view": "查看资料原文"}
+ACCESS_ACTIONS = {"view": "查看专家", "export": "导出全库", "search": "检索", "doc_view": "查看资料原文",
+                  "chat": "AI 对话"}
 DEDUP_MINUTES = 30   # 同一人短时间内反复看同一位专家只记一条，避免刷新刷出上千行
 
 
-def log_access(s: Session, actor: str, action: str, *, expert=None, detail: str = "", ip: str = ""):
+def log_access(s: Session, actor: str, action: str, *, expert=None, detail: str = "", ip: str = "",
+               dedup: bool = True):
+    """dedup=False 用于每条都要留痕的场景（如 AI 对话，每次提问内容都不同，合并会丢信息）。"""
     now = datetime.now()
     eid = expert.id if expert is not None else None
     recent = (s.query(AccessLog)
               .filter(AccessLog.actor == actor, AccessLog.action == action,
                       AccessLog.expert_id.is_(eid) if eid is None else AccessLog.expert_id == eid,
                       AccessLog.created_at >= now - timedelta(minutes=DEDUP_MINUTES))
-              .order_by(AccessLog.id.desc()).first())
+              .order_by(AccessLog.id.desc()).first()) if dedup else None
     if recent:
         recent.created_at = now      # 只更新时间，不新增行
         return

@@ -1,0 +1,98 @@
+{% extends "base.html" %}{% block body %}
+<h2>AI 助手</h2>
+<div class="panel">用大白话问，它会自己去查专家库再回答，提到的专家都带链接可以点开核实。
+<div class="muted" style="margin-top:4px">
+{% if llm_on %}已接入 {{model}}。{% else %}<b>未配置大模型</b>（环境变量 LLM_API_KEY 为空），提问会收到提示；请先用<a href="/ask">找专家</a>。{% endif %}
+手机 / 邮箱 / 微信 / 内部备注<b>不会发送给大模型</b>，需要联系方式请点开专家详情页查看。
+每人每分钟最多 {{rate_limit}} 次提问；刷新页面即清空当前对话。对话内容会记入访问日志。</div></div>
+
+<div class="card chat">
+  <div class="egs">
+    <button class="ghost sm eg" type="button">帮我找 3 位做 ADC 临床的专家</button>
+    <button class="ghost sm eg" type="button">张伟参加过哪些会议</button>
+    <button class="ghost sm eg" type="button">我们今年的会议都有谁参加</button>
+    <button class="ghost sm eg" type="button">合作次数最多的 5 位专家是谁</button>
+    <button class="ghost sm eg" type="button">库里做 ADC 的专家一共有多少位</button>
+  </div>
+  <div class="log" id="log">
+    <div class="turn"><div class="bub">你好，我可以帮你在专家库里找人、看某位专家的合作历史、查某场会议的参会名单，也能做简单统计。上面几个例子点一下就能试。</div></div>
+  </div>
+  <form class="ask" id="ask">
+    <textarea id="q" placeholder="例如：找几位做双抗、参加过我们会议的临床专家（Enter 发送，Shift+Enter 换行）" autofocus></textarea>
+    <button id="send">发送</button>
+  </form>
+</div>
+
+<script>
+const log = document.getElementById('log'), qbox = document.getElementById('q'), sendBtn = document.getElementById('send');
+let hist = [], busy = false;
+
+function esc(t){ return t.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// 极简 Markdown：先整体转义，再只放行链接/加粗/列表。链接仅允许站内相对路径。
+function md(t){
+  let h = esc(t);
+  h = h.replace(/\[([^\]\n]+)\]\((\/[A-Za-z0-9_\-\/?=&.%]*)\)/g, '<a href="$2">$1</a>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  const out = []; let ul = false;
+  for (const raw of h.split('\n')) {
+    const line = raw.trim();
+    const m = line.match(/^(?:[-*]|\d+\.)\s+(.*)$/);
+    if (m) { if (!ul) { out.push('<ul>'); ul = true; } out.push('<li>' + m[1] + '</li>'); }
+    else { if (ul) { out.push('</ul>'); ul = false; } if (line) out.push('<p>' + line + '</p>'); }
+  }
+  if (ul) out.push('</ul>');
+  return out.join('');
+}
+
+function bubble(who, cls){
+  const turn = document.createElement('div'); turn.className = 'turn' + (who === 'me' ? ' me' : '');
+  const b = document.createElement('div'); b.className = 'bub' + (cls ? ' ' + cls : '');
+  turn.appendChild(b); log.appendChild(turn); log.scrollTop = log.scrollHeight; return b;
+}
+
+async function ask(text){
+  if (busy || !text.trim()) return;
+  busy = true; sendBtn.disabled = true; qbox.value = '';
+  bubble('me').textContent = text;
+  hist.push({role:'user', content:text});
+  const b = bubble('ai'); b.innerHTML = '<span class="step">思考中<span class="cursor"></span></span>';
+  let answer = '', steps = [];
+  const paint = (typing) => {
+    b.innerHTML = steps.map(s => '<div class="step">' + esc(s) + '</div>').join('')
+                + md(answer) + (typing ? '<span class="cursor"></span>' : '');
+    log.scrollTop = log.scrollHeight;
+  };
+  try {
+    const r = await fetch('/chat/stream', {method:'POST', headers:{'Content-Type':'application/json'},
+                                           body: JSON.stringify({messages: hist})});
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const {value, done} = await rd.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for (const p of parts) {
+        const line = p.split('\n').find(x => x.startsWith('data:')); if (!line) continue;
+        let ev; try { ev = JSON.parse(line.slice(5)); } catch(e) { continue; }
+        if (ev.t === 'delta') { answer += ev.v; paint(true); }
+        else if (ev.t === 'tool') { steps.push('· ' + ev.v); paint(true); }
+        else if (ev.t === 'error') { b.classList.add('err'); answer += (answer ? '\n\n' : '') + ev.v; paint(false); }
+        else if (ev.t === 'done') { paint(false); }
+      }
+    }
+  } catch (e) {
+    b.classList.add('err'); answer += (answer ? '\n\n' : '') + '连接中断，请重试。'; paint(false);
+  }
+  paint(false);
+  if (answer.trim()) hist.push({role:'assistant', content:answer});
+  busy = false; sendBtn.disabled = false; qbox.focus();
+}
+
+document.getElementById('ask').addEventListener('submit', e => { e.preventDefault(); ask(qbox.value); });
+qbox.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(qbox.value); }
+});
+document.querySelectorAll('.eg').forEach(btn => btn.addEventListener('click', () => ask(btn.textContent)));
+</script>
+{% endblock %}

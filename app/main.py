@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from . import auth, extract, history, importer, search
+from . import auth, chat, extract, history, importer, search
 from .auth import ADMIN, ANY, EDITOR
 from .models import (Document, DuplicateCandidate, Expert, ExpertGroup, FOCUS_LEVELS, FOCUS_ORDER,
                      MEETING_STATUS, Meeting, Participation, ROLES, SessionLocal, Tag, UPLOAD_DIR,
@@ -886,6 +886,40 @@ def ask(request: Request, s: Session = Depends(db), sess=Depends(ANY), q: str = 
         history.log_access(s, sess["name"], "search", detail=f"{q[:80]} → {len(results)} 位", ip=client_ip(request))
         s.commit()
     return render("ask.html", request, q=q, parsed=parsed, results=results, llm_on=extract.llm_enabled())
+
+
+# ---------- AI 对话 ----------
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request, sess=Depends(ANY)):
+    return render("chat.html", request, llm_on=extract.llm_enabled(),
+                  rate_limit=chat.RATE_LIMIT, model=extract.LLM_MODEL)
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request, sess=Depends(ANY)):
+    from fastapi.responses import StreamingResponse
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    history_msgs = body.get("messages") if isinstance(body, dict) else None
+    if not isinstance(history_msgs, list) or not chat.first_question(history_msgs):
+        return Response(chat.sse("error", "请先输入问题。") + chat.sse("done", ""),
+                        media_type="text/event-stream")
+    if (wait := chat.rate_limited(sess["name"])):
+        return Response(chat.sse("error", f"提问太频繁了（每分钟最多 {chat.RATE_LIMIT} 次），"
+                                          f"请 {wait} 秒后再试。") + chat.sse("done", ""),
+                        media_type="text/event-stream")
+    q = chat.first_question(history_msgs)
+    with SessionLocal() as s:
+        history.log_access(s, sess["name"], "chat", detail=q, ip=client_ip(request), dedup=False)
+        s.commit()
+
+    def gen():
+        with SessionLocal() as s2:
+            yield from chat.stream_sse(s2, history_msgs)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ---------- 用户管理 ----------
