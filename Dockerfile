@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /srv
+# postgresql-client：scripts/backup.py 在 PG 模式下要用 pg_dump
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
